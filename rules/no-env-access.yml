@@ -1,0 +1,22 @@
+id: no-env-access
+language: rust
+severity: error
+message: Read the environment only in src/main.rs; everywhere else take `config::Env`.
+note: |
+  Injecting the environment keeps configuration precedence deterministic and
+  testable, and guarantees tests never see (or bill) a developer's real
+  Cloudflare credentials.
+files:
+  - src/**/*.rs
+ignores:
+  - src/main.rs
+rule:
+  any:
+    - pattern: std::env::var($$$A)
+    - pattern: std::env::var_os($$$A)
+    - pattern: std::env::vars($$$A)
+    - pattern: std::env::vars_os($$$A)
+    - pattern: env::var($$$A)
+    - pattern: env::var_os($$$A)
+    - pattern: env::vars($$$A)
+    - pattern: env::vars_os($$$A)

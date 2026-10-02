@@ -1,0 +1,8 @@
+id: no-process-exit
+valid:
+  - return EXIT_USAGE;
+  - ExitCode::from(code)
+invalid:
+  - std::process::exit(1);
+  - process::exit(code);
+  - std::process::abort();

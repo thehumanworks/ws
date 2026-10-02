@@ -1,0 +1,10 @@
+id: no-direct-stdio
+valid:
+  - writeln!(out, "hello")?;
+  - write!(stderr, "{rendered}");
+invalid:
+  - println!("hello");
+  - eprintln!("oops {e}");
+  - dbg!(value);
+  - let out = std::io::stdout();
+  - let mut err = io::stderr().lock();

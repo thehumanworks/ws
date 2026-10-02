@@ -1,0 +1,97 @@
+{
+  "cloudflare_sources": [
+    {
+      "path": "sources/cloudflare/about/index.md",
+      "url": "https://developers.cloudflare.com/web-search/about/index.md",
+      "saved_at_utc": "2026-10-02T19:29:41.322390+00:00",
+      "sha256": "a7d09cf9d87ae0f89f5051fb9b643d8e753c6065b2ac42a4643bb782151d39f3",
+      "bytes": 6172
+    },
+    {
+      "path": "sources/cloudflare/account-id.md",
+      "url": "https://developers.cloudflare.com/fundamentals/account/find-account-and-zone-ids/index.md",
+      "saved_at_utc": "2026-10-02T19:30:20.967931+00:00",
+      "sha256": "203c5a639650687fe44a5ddcd52d307c1663e93c8c193abaa364ea60fa06eae4",
+      "bytes": 4337
+    },
+    {
+      "path": "sources/cloudflare/create-token.md",
+      "url": "https://developers.cloudflare.com/fundamentals/api/get-started/create-token/index.md",
+      "saved_at_utc": "2026-10-02T19:29:55.140891+00:00",
+      "sha256": "7ffaff1da0cc2e2716c36bd514638c0e5babb85196fa79a917ea1e633f7bdb28",
+      "bytes": 6521
+    },
+    {
+      "path": "sources/cloudflare/gateway-billing.md",
+      "url": "https://developers.cloudflare.com/ai-gateway/features/unified-billing/index.md",
+      "saved_at_utc": "2026-10-02T19:29:55.149217+00:00",
+      "sha256": "7b37465e8cf0663038fd286801bd6268aced9c2b06733095a2eedbaf6ba34157",
+      "bytes": 12303
+    },
+    {
+      "path": "sources/cloudflare/gateway-byok.md",
+      "url": "https://developers.cloudflare.com/ai-gateway/configuration/bring-your-own-keys/index.md",
+      "saved_at_utc": "2026-10-02T19:29:55.141423+00:00",
+      "sha256": "3c98cd0e378fa8421c8ebad34244348d0c012f5e4fd2094b13add631fc3e14b7",
+      "bytes": 9313
+    },
+    {
+      "path": "sources/cloudflare/gateway-get-started.md",
+      "url": "https://developers.cloudflare.com/ai-gateway/get-started/index.md",
+      "saved_at_utc": "2026-10-02T19:29:55.109302+00:00",
+      "sha256": "cca54499abf4f8605af659544114c0d2677b010482d26cffccfa0bdc2f232719",
+      "bytes": 9412
+    },
+    {
+      "path": "sources/cloudflare/gateway-logging.md",
+      "url": "https://developers.cloudflare.com/ai-gateway/observability/logging/index.md",
+      "saved_at_utc": "2026-10-02T19:29:55.130801+00:00",
+      "sha256": "642d976cafa22846997ba859c99c235021071f61ff1944642c708600e0e309a4",
+      "bytes": 7713
+    },
+    {
+      "path": "sources/cloudflare/gateway-rate-limiting.md",
+      "url": "https://developers.cloudflare.com/ai-gateway/features/rate-limiting/index.md",
+      "saved_at_utc": "2026-10-02T19:30:21.055746+00:00",
+      "sha256": "274398a9429803918979f657a9a2121f3dd117e0847751e48a1300231612b679",
+      "bytes": 4812
+    },
+    {
+      "path": "sources/cloudflare/how-to-use/index.md",
+      "url": "https://developers.cloudflare.com/web-search/how-to-use/index.md",
+      "saved_at_utc": "2026-10-02T19:29:41.328454+00:00",
+      "sha256": "86ca00b4dfe5cf79d25b9f7876a5efde9b6994c2a137c55144e88ef991b298ff",
+      "bytes": 11144
+    },
+    {
+      "path": "sources/cloudflare/how-to-use.mdx",
+      "url": "https://raw.githubusercontent.com/cloudflare/cloudflare-docs/production/src/content/docs/web-search/how-to-use.mdx",
+      "saved_at_utc": "2026-10-02T19:29:55.246527+00:00",
+      "sha256": "313d889003f607e3d855c8b4410a0c713ac62e64864fab88afa89fea56800975",
+      "bytes": 10902
+    },
+    {
+      "path": "sources/cloudflare/index.md",
+      "url": "https://developers.cloudflare.com/web-search/index.md",
+      "saved_at_utc": "2026-10-02T19:29:41.325941+00:00",
+      "sha256": "751c12d964b760f33b61f94a5042f75ffb3432b91ff5eb3d19ce9fcbc0fef951",
+      "bytes": 5332
+    },
+    {
+      "path": "sources/cloudflare/llms.txt",
+      "url": "https://developers.cloudflare.com/web-search/llms.txt",
+      "saved_at_utc": "2026-10-02T19:29:25.211509+00:00",
+      "sha256": "9f620a1c5046417b4b749d3d45f4ead455755803061993d27ff645a1fb566ad3",
+      "bytes": 1496
+    },
+    {
+      "path": "sources/cloudflare/providers/index.md",
+      "url": "https://developers.cloudflare.com/web-search/providers/index.md",
+      "saved_at_utc": "2026-10-02T19:29:41.341376+00:00",
+      "sha256": "c3fe48b545b9c8dcdfcd4b9e2200f1382003199d55d366bf204b91fa2458a3d7",
+      "bytes": 5609
+    }
+  ],
+  "mcp_sources_manifest": "sources/mcp/manifest.json",
+  "note": "Source retrieval via curl with normal TLS validation; saved_at is local file write time. Production-branch MDX is a dated snapshot, not an immutable revision."
+}

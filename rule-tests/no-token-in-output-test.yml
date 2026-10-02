@@ -1,0 +1,8 @@
+id: no-token-in-output
+valid:
+  - let h = format!("Bearer {}", credentials.token);
+  - writeln!(out, "api token    {}", set(key))?;
+invalid:
+  - let m = format!("token is {}", credentials.token);
+  - writeln!(out, "{}", settings.credentials.token)?;
+  - write!(f, "{} {}", self.account_id, self.token)

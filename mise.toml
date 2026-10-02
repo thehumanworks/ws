@@ -1,0 +1,60 @@
+# Toolchain and task runner for ws. `mise install` provisions everything below.
+[tools]
+rust = { version = "1.98.1", components = "clippy,rustfmt" }
+ast-grep = "0.45.3"
+hk = "2.4.0"
+pkl = "0.32.1"
+"github:leanprover/lean4" = "4.34.1"
+zig = "0.15.2"
+"cargo:cargo-zigbuild" = "0.23.4"
+
+[tasks.fmt]
+description = "Format Rust sources"
+run = "cargo fmt --all"
+
+[tasks."fmt:check"]
+description = "Check Rust formatting"
+run = "cargo fmt --all -- --check"
+
+[tasks.lint]
+description = "Strict clippy (warnings are errors)"
+run = "cargo clippy --all-targets --all-features --locked -- -D warnings"
+
+[tasks.rules]
+description = "ast-grep: test the rules, then scan the codebase with them"
+run = ["ast-grep test --skip-snapshot-tests", "ast-grep scan"]
+
+[tasks.test]
+description = "Unit, integration and Lean-vector tests"
+run = "cargo test --all-targets --locked"
+
+[tasks.proof]
+description = "Build the Lean proofs and check lean/vectors.txt is what the model generates"
+dir = "lean"
+run = ["lake build", "lake exe vectors | diff -u vectors.txt -"]
+
+[tasks."proof:vectors"]
+description = "Regenerate lean/vectors.txt from the Lean model"
+dir = "lean"
+run = "lake exe vectors > vectors.txt"
+
+[tasks.cross]
+description = "Cross-compile release binaries for Linux (x86_64, arm64) and Windows from any host"
+run = [
+  "rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-pc-windows-gnu",
+  "cargo zigbuild --release --locked --target x86_64-unknown-linux-musl",
+  "cargo zigbuild --release --locked --target aarch64-unknown-linux-musl",
+  "cargo zigbuild --release --locked --target x86_64-pc-windows-gnu",
+]
+
+[tasks.build]
+description = "Release build for this machine (target/release/ws)"
+run = "cargo build --release --locked"
+
+[tasks.verify]
+description = "Everything CI and the pre-commit hook require"
+depends = ["fmt:check", "lint", "rules", "test", "proof"]
+
+[tasks.demo]
+description = "Run the demo against a local mock server (no credentials or credits needed)"
+run = "demo/demo.sh --mock"

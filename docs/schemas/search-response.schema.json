@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cloudflare Web Search response (extracted documentation)",
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "imageUrl": {
+            "type": "string"
+          },
+          "faviconUrl": {
+            "type": "string"
+          },
+          "lastModifiedDate": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "url",
+          "title"
+        ]
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "latencyMs": {
+          "type": "number"
+        }
+      }
+    }
+  }
+}

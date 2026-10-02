@@ -1,0 +1,22 @@
+id: no-direct-stdio
+language: rust
+severity: error
+message: Write through the injected `&mut dyn Write`; only src/main.rs may touch stdout/stderr.
+note: |
+  `cli::run` receives its output streams so tests can capture them and so
+  `--json` output can never be polluted by a stray print.
+files:
+  - src/**/*.rs
+ignores:
+  - src/main.rs
+rule:
+  any:
+    - pattern: println!($$$A)
+    - pattern: print!($$$A)
+    - pattern: eprintln!($$$A)
+    - pattern: eprint!($$$A)
+    - pattern: dbg!($$$A)
+    - pattern: std::io::stdout()
+    - pattern: std::io::stderr()
+    - pattern: io::stdout()
+    - pattern: io::stderr()

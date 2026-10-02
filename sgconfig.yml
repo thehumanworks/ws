@@ -1,0 +1,6 @@
+# ast-grep project config. Rules encode project conventions that clippy cannot
+# express; each has cases in rule-tests/. Run: `mise run rules`.
+ruleDirs:
+  - rules
+testConfigs:
+  - testDir: rule-tests

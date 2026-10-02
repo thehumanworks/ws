@@ -1,0 +1,22 @@
+id: no-panicking-calls
+language: rust
+severity: error
+message: Return an `Error` instead of panicking; `unwrap`/`expect`/`panic!` are for tests only.
+note: A CLI that panics prints a backtrace instead of an actionable message and exit status.
+files:
+  - src/**/*.rs
+rule:
+  any:
+    - pattern: $X.unwrap()
+    - pattern: $X.expect($$$A)
+    - pattern: panic!($$$A)
+    - pattern: unreachable!($$$A)
+    - pattern: todo!($$$A)
+    - pattern: unimplemented!($$$A)
+  not:
+    inside:
+      stopBy: end
+      kind: mod_item
+      has:
+        field: name
+        regex: ^tests$

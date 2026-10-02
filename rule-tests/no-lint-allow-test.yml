@@ -1,0 +1,17 @@
+id: no-lint-allow
+valid:
+  - |
+    #[expect(clippy::unwrap_used, reason = "test helper")]
+    fn f() {}
+  - |
+    #[derive(Debug)]
+    struct S;
+invalid:
+  - |
+    #[allow(clippy::unwrap_used)]
+    fn f() {}
+  - |
+    #![allow(dead_code)]
+  - |
+    #[allow(unused, reason = "later")]
+    fn g() {}

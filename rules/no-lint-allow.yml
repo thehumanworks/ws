@@ -1,0 +1,12 @@
+id: no-lint-allow
+language: rust
+severity: error
+message: Do not silence lints with `allow`. Fix the code, or use `#[expect(..., reason = "...")]`.
+note: |
+  `expect` documents why and fails once the suppression is no longer needed;
+  `allow` silently rots.
+rule:
+  kind: attribute
+  has:
+    kind: identifier
+    regex: ^allow$

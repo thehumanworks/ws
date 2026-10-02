@@ -1,0 +1,62 @@
+amends "package://github.com/jdx/hk/releases/download/v2.4.0/hk@2.4.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v2.4.0/hk@2.4.0#/Builtins.pkl"
+
+// Git hooks for ws. Install with `hk install` (tools come from mise.toml).
+// `hk check` runs everything read-only; `hk fix` applies formatting.
+
+local linters = new Mapping<String, Step> {
+    ["rustfmt"] {
+        glob = "**/*.rs"
+        check = "cargo fmt --all -- --check"
+        fix = "cargo fmt --all"
+    }
+    ["clippy"] {
+        glob = List("**/*.rs", "Cargo.toml", "Cargo.lock", "clippy.toml")
+        check = "cargo clippy --all-targets --all-features --locked -- -D warnings"
+    }
+    ["ast-grep-rule-tests"] {
+        glob = List("rules/**", "rule-tests/**", "sgconfig.yml")
+        check = "ast-grep test --skip-snapshot-tests"
+    }
+    ["ast-grep"] {
+        glob = List("**/*.rs", "rules/**", "sgconfig.yml")
+        check = "ast-grep scan"
+    }
+    ["test"] {
+        glob = List("**/*.rs", "Cargo.toml", "Cargo.lock", "lean/vectors.txt")
+        check = "cargo test --all-targets --locked --quiet"
+    }
+    ["lean"] {
+        glob = List("lean/**")
+        dir = "lean"
+        check = "lake build && lake exe vectors | diff -u vectors.txt -"
+    }
+    ["pkl"] = Builtins.pkl
+    ["merge-conflicts"] = Builtins.check_merge_conflict
+    ["private-keys"] = Builtins.detect_private_key
+    // docs/ is a hash-pinned snapshot of upstream documentation: never rewrite it.
+    ["trailing-whitespace"] = (Builtins.trailing_whitespace) {
+        exclude = List("docs/**", "demo/transcript.txt")
+    }
+    ["newlines"] = (Builtins.newlines) {
+        exclude = List("docs/**")
+    }
+}
+
+hooks {
+    ["pre-commit"] {
+        fix = true
+        stash = "git"
+        steps = linters
+    }
+    ["pre-push"] {
+        steps = linters
+    }
+    ["check"] {
+        steps = linters
+    }
+    ["fix"] {
+        fix = true
+        steps = linters
+    }
+}

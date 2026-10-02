@@ -1,0 +1,99 @@
+{
+  "retrieved_at_utc": "2026-10-02T19:30:54.035820+00:00",
+  "repo_commits": {
+    "modelcontextprotocol/modelcontextprotocol": "db788e34ffc0c7253f099f647a5e25e0396fadfe",
+    "modelcontextprotocol/rust-sdk": "ae2f9c9b45a2c98d24ee345406e79f507c9f9282"
+  },
+  "sources": [
+    {
+      "file": "spec-overview.md",
+      "url": "https://modelcontextprotocol.io/specification/2026-07-28.md",
+      "bytes": 5817,
+      "sha256": "f8df03767e5cbdd4921ae569d1d69e8da9e455e1629fadf4d0613cd658dd632f"
+    },
+    {
+      "file": "spec-stdio.md",
+      "url": "https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/stdio.md",
+      "bytes": 7352,
+      "sha256": "a021917cb77ecd936143aced4fd243e12dd7b5f9a9344546742df97a381277f5"
+    },
+    {
+      "file": "spec-versioning.md",
+      "url": "https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning.md",
+      "bytes": 8410,
+      "sha256": "43b48c19cbc330410beed44da8cf441e100a05652a3654f39eb331bb94f46402"
+    },
+    {
+      "file": "spec-tools.md",
+      "url": "https://modelcontextprotocol.io/specification/2026-07-28/server/tools.md",
+      "bytes": 24314,
+      "sha256": "09be49a064940ef288b47f8df09e95e6e3dc087c3f94e466acd60ec66dff25c3"
+    },
+    {
+      "file": "legacy-lifecycle.md",
+      "url": "https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle.md",
+      "bytes": 9217,
+      "sha256": "8c030bf50b74e562d244916b16baab1bfcd86ae03736d4e5b6e24ed58a913af9"
+    },
+    {
+      "file": "legacy-tools.md",
+      "url": "https://modelcontextprotocol.io/specification/2025-11-25/server/tools.md",
+      "bytes": 14061,
+      "sha256": "b372c48eea58744850f5684b796438f32643402533b24084d82b49b580721aff"
+    },
+    {
+      "file": "rust-sdk-readme.md",
+      "url": "https://raw.githubusercontent.com/modelcontextprotocol/rust-sdk/ae2f9c9b45a2c98d24ee345406e79f507c9f9282/README.md",
+      "bytes": 68130,
+      "sha256": "c4f68586fc688a74a32f3177f00aa2f9d2e529f5c64326a0cfdc50eaa37679f0"
+    },
+    {
+      "file": "rmcp-readme.md",
+      "url": "https://raw.githubusercontent.com/modelcontextprotocol/rust-sdk/ae2f9c9b45a2c98d24ee345406e79f507c9f9282/crates/rmcp/README.md",
+      "bytes": 3382,
+      "sha256": "e2bed55087789ee5f9195ef39eb17c9ba2430a20806e89f3cd1b070a4364812b"
+    },
+    {
+      "file": "rmcp-cargo.toml",
+      "url": "https://raw.githubusercontent.com/modelcontextprotocol/rust-sdk/ae2f9c9b45a2c98d24ee345406e79f507c9f9282/crates/rmcp/Cargo.toml",
+      "bytes": 13565,
+      "sha256": "549e268c14b284c2bcc22303348a19b0f5227097eb41b37f2e2c1adeaa29c4ff"
+    },
+    {
+      "file": "spec-basic.md",
+      "url": "https://modelcontextprotocol.io/specification/2026-07-28/basic/index.md",
+      "bytes": 24001,
+      "sha256": "67a62de95bdc816ff96e8d5c69b0fc19237191f42805846e2ec8f8d7063e123e"
+    },
+    {
+      "file": "spec-discover.md",
+      "url": "https://modelcontextprotocol.io/specification/2026-07-28/server/discover.md",
+      "bytes": 3835,
+      "sha256": "331489cd2984399cfe4828357fdd5a23e062ef40f69f4815499b055b51e2b82c"
+    },
+    {
+      "file": "rust-sdk-cargo.toml",
+      "url": "https://raw.githubusercontent.com/modelcontextprotocol/rust-sdk/ae2f9c9b45a2c98d24ee345406e79f507c9f9282/Cargo.toml",
+      "bytes": 767,
+      "sha256": "28da463c128376de0548c597aa807cbf5e1d6bf20bca2a00ee320e4a444622b0"
+    },
+    {
+      "file": "rmcp-server.rs",
+      "url": "https://raw.githubusercontent.com/modelcontextprotocol/rust-sdk/ae2f9c9b45a2c98d24ee345406e79f507c9f9282/crates/rmcp/src/service/server.rs",
+      "bytes": 52041,
+      "sha256": "81f4d5b4a1b93eb80b84ae4220ff58a61409246e1be3fb71f14670fbbd31567f"
+    },
+    {
+      "file": "build-server.md",
+      "url": "https://modelcontextprotocol.io/docs/2026-07-28/develop/build-server.md",
+      "bytes": 96953,
+      "sha256": "ec7120385cf9673208a072d8f6bb40c1970d595b56982744d44e9aa79cb7f951"
+    },
+    {
+      "file": "codex-mcp.html",
+      "url": "https://learn.chatgpt.com/docs/extend/mcp?surface=cli",
+      "bytes": 473607,
+      "sha256": "602f26783866961af04b00c18a76c2ffd652bf9ccdabad2a96d75c66613dd78f"
+    }
+  ]
+}

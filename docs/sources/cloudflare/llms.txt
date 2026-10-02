@@ -1,0 +1,23 @@
+# Web Search API
+
+Ground AI agents and applications with real-time web search results
+
+> Links below point directly to Markdown versions of each page. Any page can also be retrieved as Markdown by sending an `Accept: text/markdown` header to the page's URL without the `index.md` suffix (for example, `curl -H "Accept: text/markdown" https://developers.cloudflare.com/web-search/`).
+>
+> For other Cloudflare products, see the [Cloudflare documentation directory](https://developers.cloudflare.com/llms.txt).
+
+## Overview
+
+- [Cloudflare Web Search API](https://developers.cloudflare.com/web-search/index.md): Ground AI agents and applications with real-time web search results from Ceramic.ai, Exa, and Linkup through AI Gateway.
+
+## About Web Search API
+
+- [About Web Search API](https://developers.cloudflare.com/web-search/about/index.md): Learn how Web Search API grounds AI agents in live web data, how it integrates with AI Gateway, and the crawling standards that search providers follow.
+
+## How to use Web Search API
+
+- [How to use Web Search API](https://developers.cloudflare.com/web-search/how-to-use/index.md): Send web search requests through AI Gateway with the REST API or the Workers AI binding, bring your own provider key, and use web search as a tool for models.
+
+## Providers
+
+- [Providers](https://developers.cloudflare.com/web-search/providers/index.md): Compare Web Search API providers Ceramic.ai, Exa, and Linkup, including Zero Data Retention terms and list API pricing.

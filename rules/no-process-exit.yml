@@ -1,0 +1,14 @@
+id: no-process-exit
+language: rust
+severity: error
+message: Return an exit status from `cli::run`; never call `process::exit`.
+note: Exiting mid-function skips destructors and makes the code path untestable in-process.
+files:
+  - src/**/*.rs
+  - tests/**/*.rs
+rule:
+  any:
+    - pattern: std::process::exit($$$A)
+    - pattern: process::exit($$$A)
+    - pattern: std::process::abort()
+    - pattern: process::abort()

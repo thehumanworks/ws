@@ -1,0 +1,14 @@
+id: no-token-in-output
+language: rust
+severity: error
+message: The API token must never be formatted into output, errors or logs.
+note: Only the Authorization header in src/client.rs may format the token.
+files:
+  - src/**/*.rs
+rule:
+  kind: macro_invocation
+  all:
+    - regex: ^(format|write|writeln|print|println|eprint|eprintln|panic|format_args)!
+    - regex: \.token\b
+  not:
+    regex: ^format!\("Bearer \{\}",

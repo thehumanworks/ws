@@ -1,0 +1,15 @@
+id: no-byte-length-on-query
+language: rust
+severity: error
+message: Count characters with `.chars().count()`; `.len()` counts UTF-8 bytes.
+note: |
+  Cloudflare limits the query to 1,024 characters. Byte length would wrongly
+  reject valid non-ASCII queries.
+files:
+  - src/**/*.rs
+rule:
+  any:
+    - pattern: query.len()
+    - pattern: $A.query.len()
+    - pattern: alias.len()
+    - pattern: text.len()

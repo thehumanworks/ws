@@ -1,0 +1,120 @@
+
+# The three providers Cloudflare offers; * marks the one ws will use
+$ ws providers
+  PROVIDER  USD/1K REQS  NOTES
+* ceramic          0.25  independent index of 40B+ pages; long snippets (up to 8,000 chars) (Cloudflare default)
+  exa              7.00  "auto" search type; highlights returned as the snippet
+  linkup           5.00  "fast" search depth; raw results, no generated answer
+
+* = provider ws will use now. Prices are a 2026-10-02 snapshot of Cloudflare's docs.
+
+# Search with the default provider (Ceramic) and gateway ('default')
+$ ws search what is cloudflare workers --limit 3
+1. what is cloudflare workers - result 1 from ceramic
+   https://example.com/ceramic/1
+   Ceramic returns long excerpts from its own index of the web.
+
+2. what is cloudflare workers - result 2 from ceramic
+   https://example.com/ceramic/2
+   Ceramic returns long excerpts from its own index of the web.
+
+3. what is cloudflare workers - result 3 from ceramic
+   https://example.com/ceramic/3
+   Ceramic returns long excerpts from its own index of the web.
+
+3 results · provider ceramic · gateway default · 1 ms · request mock-ceramic-default
+
+# Pick a provider for one search with a flag
+$ ws search 'rust async runtimes' --provider exa --limit 2
+1. rust async runtimes - result 1 from exa
+   https://example.com/exa/1
+   Exa returns highlights chosen by its 'auto' search type.
+
+2. rust async runtimes - result 2 from exa
+   https://example.com/exa/2
+   Exa returns highlights chosen by its 'auto' search type.
+
+2 results · provider exa · gateway default · 0 ms · request mock-exa-default
+
+# JSON for scripts and agents
+$ ws search 'rust async runtimes' --provider linkup --limit 1 --json
+{
+  "provider": "linkup",
+  "gateway": "default",
+  "requestId": "mock-linkup-default",
+  "items": [
+    {
+      "url": "https://example.com/linkup/1",
+      "title": "rust async runtimes - result 1 from linkup",
+      "description": "Linkup returns raw results from its 'fast' search depth."
+    }
+  ],
+  "metadata": {
+    "query": "rust async runtimes",
+    "requestId": "mock-linkup-default",
+    "latencyMs": 12.5
+  }
+}
+
+# Save a different default provider
+$ ws config set provider exa
+saved to /tmp/ws-demo/config.toml
+$ ws config show
+provider     exa (config file)
+gateway      default (default)
+account id   set
+api token    set
+config file  /tmp/ws-demo/config.toml
+
+# The environment overrides the saved default...
+$ WS_PROVIDER=linkup ws config show
+provider     linkup (environment)
+gateway      default (default)
+account id   set
+api token    set
+config file  /tmp/ws-demo/config.toml
+$ WS_PROVIDER=linkup ws search precedence -n 1
+1. precedence - result 1 from linkup
+   https://example.com/linkup/1
+   Linkup returns raw results from its 'fast' search depth.
+
+1 result · provider linkup · gateway default · 0 ms · request mock-linkup-default
+
+# ...and a flag overrides the environment
+$ WS_PROVIDER=linkup ws search precedence -n 1 --provider ceramic
+1. precedence - result 1 from ceramic
+   https://example.com/ceramic/1
+   Ceramic returns long excerpts from its own index of the web.
+
+1 result · provider ceramic · gateway default · 0 ms · request mock-ceramic-default
+
+# Choose the AI Gateway with an environment variable or a flag
+$ WS_GATEWAY_ID=team-gateway ws search gateways -n 1
+1. gateways - result 1 from exa
+   https://example.com/exa/1
+   Exa returns highlights chosen by its 'auto' search type.
+
+1 result · provider exa · gateway team-gateway · 0 ms · request mock-exa-team-gateway
+$ WS_GATEWAY_ID=team-gateway ws search gateways -n 1 --gateway other-gateway
+1. gateways - result 1 from exa
+   https://example.com/exa/1
+   Exa returns highlights chosen by its 'auto' search type.
+
+1 result · provider exa · gateway other-gateway · 0 ms · request mock-exa-other-gateway
+
+# Mistakes are caught locally, before anything is billed (exit status 2)
+$ ws search too many results --limit 11
+ws: invalid input: limit must be between 1 and 10, got 11
+[exit status 2]
+$ ws search oops --provider google
+error: invalid value 'google' for '--provider <NAME>': unknown provider 'google' (expected one of: ceramic, exa, linkup)
+
+For more information, try '--help'.
+[exit status 2]
+
+# API failures explain themselves (exit status 1)
+$ ws search anything --gateway unfunded
+ws: Cloudflare API error: HTTP 402 [web_search_payment_required]
+  request id: 00000000-0000-4000-8000-000000000000
+  hint: the gateway has no funding for this provider: load AI Gateway credits (AI Gateway > Manage > Top-up credits) or store a provider key and pass --byok-alias
+[exit status 1]

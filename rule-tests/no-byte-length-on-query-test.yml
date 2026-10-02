@@ -1,0 +1,8 @@
+id: no-byte-length-on-query
+valid:
+  - let n = query.chars().count();
+  - let n = items.len();
+invalid:
+  - if query.len() > 1024 {}
+  - let n = request.query.len();
+  - let n = alias.len();

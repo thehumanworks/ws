@@ -1,0 +1,9 @@
+id: no-env-access
+valid:
+  - let v = env("WS_PROVIDER");
+  - let v = config::env_value(env, key)?;
+invalid:
+  - let v = std::env::var("WS_PROVIDER");
+  - let v = env::var("WS_PROVIDER").ok();
+  - let v = std::env::var_os("HOME");
+  - for (k, v) in std::env::vars() {}

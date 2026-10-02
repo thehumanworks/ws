@@ -1,0 +1,18 @@
+id: no-panicking-calls
+valid:
+  - let v = value.ok_or(Error::Missing)?;
+  - let v = value.unwrap_or_default();
+  - |
+    mod tests {
+        fn check() { let v = thing().unwrap(); panic!("x"); }
+    }
+invalid:
+  - let v = value.unwrap();
+  - let v = value.expect("always set");
+  - panic!("boom");
+  - todo!();
+  - unimplemented!();
+  - |
+    mod helpers {
+        fn f() { thing().unwrap(); }
+    }
