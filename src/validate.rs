@@ -1,7 +1,10 @@
 //! Local validation of everything sent to Cloudflare.
 //!
 //! Requests are billed, so invalid input is rejected before any network call.
-//! The numeric bounds here are mirrored by the Lean model in `lean/`.
+//! Page URLs for `ws fetch` are checked here too, so a typo never leaves the machine.
+//! The bounds and rules here are mirrored by the Lean model in `lean/`.
+
+use std::net::IpAddr;
 
 /// Maximum query length, in Unicode scalar values (not bytes).
 pub const QUERY_MAX_CHARS: usize = 1024;
@@ -17,6 +20,8 @@ pub const NAME_MAX_LEN: usize = 64;
 pub const TIMEOUT_MIN_SECS: u64 = 1;
 /// Largest accepted request timeout, in seconds.
 pub const TIMEOUT_MAX_SECS: u64 = 300;
+/// Maximum length of a page URL, in characters.
+pub const URL_MAX_CHARS: usize = 2048;
 
 /// Why a value was rejected locally.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -53,6 +58,18 @@ pub enum ValidationError {
     TimeoutOutOfRange {
         /// The rejected timeout in seconds.
         actual: u64,
+    },
+    /// The page URL was not an absolute `http://` or `https://` URL with a host.
+    #[error("URL must start with http:// or https:// and name a host")]
+    UrlNotHttp,
+    /// The page URL contained whitespace or control characters.
+    #[error("URL must not contain whitespace or control characters")]
+    UrlHasWhitespace,
+    /// The page URL exceeded [`URL_MAX_CHARS`].
+    #[error("URL is {actual} characters; the maximum is {max}", max = URL_MAX_CHARS)]
+    UrlTooLong {
+        /// Number of characters in the rejected URL.
+        actual: usize,
     },
 }
 
@@ -163,9 +180,201 @@ pub const fn timeout_secs(secs: u64) -> Result<u64, ValidationError> {
     }
 }
 
+/// Validates a page URL for `ws fetch`. The URL is returned unmodified.
+///
+/// It must be an absolute `http://` or `https://` URL (scheme matched without
+/// regard to ASCII case) that names a host and has no whitespace or control
+/// characters.
+///
+/// # Errors
+/// [`ValidationError::UrlHasWhitespace`], [`ValidationError::UrlTooLong`] or
+/// [`ValidationError::UrlNotHttp`].
+pub fn url(url: &str) -> Result<&str, ValidationError> {
+    if url.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Err(ValidationError::UrlHasWhitespace);
+    }
+    let actual = url.chars().count();
+    if actual > URL_MAX_CHARS {
+        return Err(ValidationError::UrlTooLong { actual });
+    }
+    let rest = ["http://", "https://"].iter().find_map(|scheme| {
+        let (head, rest) = url.split_at_checked(scheme.len())?;
+        head.eq_ignore_ascii_case(scheme).then_some(rest)
+    });
+    match rest {
+        Some(rest) if !rest.starts_with(['/', '?', '#', ':', '@']) && !rest.is_empty() => Ok(url),
+        _ => Err(ValidationError::UrlNotHttp),
+    }
+}
+
+/// Whether an IPv4 address is on the public internet.
+///
+/// Refused: `0.0.0.0/8`, private ranges (`10/8`, `172.16/12`, `192.168/16`),
+/// loopback, carrier-grade NAT (`100.64/10`), link-local (`169.254/16`, which
+/// holds cloud metadata services), `192.0.0.0/24`, benchmarking (`198.18/15`),
+/// multicast and everything above. Mirrored by `ipv4Public` in the Lean model.
+#[must_use]
+pub fn ipv4_is_public(octets: [u8; 4]) -> bool {
+    let [a, b, c, _] = octets;
+    !(a == 0
+        || a == 10
+        || a == 127
+        || (a == 100 && (64..=127).contains(&b))
+        || (a == 169 && b == 254)
+        || (a == 172 && (16..=31).contains(&b))
+        || (a == 192 && b == 168)
+        || (a == 192 && b == 0 && c == 0)
+        || (a == 198 && (b == 18 || b == 19))
+        || a >= 224)
+}
+
+/// Whether an address is on the public internet.
+///
+/// IPv4 follows [`ipv4_is_public`]; IPv6 refuses loopback, the unspecified
+/// address, unique-local, link-local and multicast addresses, and applies the
+/// IPv4 rule to addresses that embed one (mapped, compatible, NAT64).
+#[must_use]
+pub fn ip_is_public(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => ipv4_is_public(v4.octets()),
+        IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4() {
+                return ipv4_is_public(v4.octets());
+            }
+            if let [0x64, 0xff9b, 0, 0, 0, 0, high, low] = v6.segments() {
+                let ([a, b], [c, d]) = (high.to_be_bytes(), low.to_be_bytes());
+                return ipv4_is_public([a, b, c, d]);
+            }
+            !(v6.is_multicast() || v6.is_unique_local() || v6.is_unicast_link_local())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn private_and_special_ipv4_ranges_are_not_public() {
+        for public in [
+            [1, 1, 1, 1],
+            [8, 8, 8, 8],
+            [93, 184, 215, 14],
+            [100, 63, 255, 255],
+            [100, 128, 0, 0],
+            [172, 15, 255, 255],
+            [172, 32, 0, 0],
+            [192, 0, 1, 1],
+            [192, 167, 1, 1],
+            [198, 17, 0, 1],
+            [198, 20, 0, 1],
+            [223, 255, 255, 255],
+        ] {
+            assert!(ipv4_is_public(public), "{public:?}");
+        }
+        for private in [
+            [0, 0, 0, 0],
+            [0, 1, 2, 3],
+            [10, 0, 0, 1],
+            [100, 64, 0, 1],
+            [100, 127, 255, 255],
+            [127, 0, 0, 1],
+            [127, 255, 255, 255],
+            [169, 254, 169, 254],
+            [172, 16, 0, 1],
+            [172, 31, 255, 255],
+            [192, 0, 0, 1],
+            [192, 168, 1, 1],
+            [198, 18, 0, 1],
+            [198, 19, 255, 255],
+            [224, 0, 0, 1],
+            [240, 0, 0, 1],
+            [255, 255, 255, 255],
+        ] {
+            assert!(!ipv4_is_public(private), "{private:?}");
+        }
+    }
+
+    #[test]
+    fn ipv6_special_ranges_and_embedded_ipv4_are_not_public() {
+        for public in [
+            "2606:4700:4700::1111",
+            "2001:4860:4860::8888",
+            "64:ff9b::808:808",
+        ] {
+            assert!(ip_is_public(public.parse().unwrap()), "{public}");
+        }
+        for private in [
+            "::",
+            "::1",
+            "fc00::1",
+            "fd12:3456::1",
+            "fe80::1",
+            "ff02::1",
+            "::ffff:127.0.0.1",
+            "::ffff:10.0.0.1",
+            "::ffff:169.254.169.254",
+            "::192.168.0.1",
+            "64:ff9b::7f00:1",
+            "64:ff9b::a00:1",
+        ] {
+            assert!(!ip_is_public(private.parse().unwrap()), "{private}");
+        }
+        assert!(ip_is_public("8.8.8.8".parse().unwrap()));
+        assert!(!ip_is_public("127.0.0.1".parse().unwrap()));
+    }
+
+    #[test]
+    fn url_must_be_absolute_http_or_https() {
+        for ok in [
+            "https://example.com",
+            "http://example.com/a?b=c#d",
+            "HTTPS://Example.com/",
+            "http://127.0.0.1:8080/x",
+            "https://[::1]/",
+            "https://exämple.com/ü",
+        ] {
+            assert_eq!(url(ok), Ok(ok));
+        }
+        for bad in [
+            "",
+            "example.com",
+            "ftp://example.com",
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "data:text/html,hi",
+            "http://",
+            "https:///path",
+            "http://?q",
+            "http:example.com",
+            "//example.com",
+            "é",
+        ] {
+            assert_eq!(url(bad), Err(ValidationError::UrlNotHttp), "{bad}");
+        }
+    }
+
+    #[test]
+    fn url_rejects_whitespace_controls_and_excess_length() {
+        for bad in [
+            "https://example.com/a b",
+            " https://example.com",
+            "https://example.com/\r\nHost: evil",
+            "https://example.com/\u{1b}[2J",
+        ] {
+            assert_eq!(url(bad), Err(ValidationError::UrlHasWhitespace), "{bad}");
+        }
+        let base = "https://example.com/";
+        let max = format!("{base}{}", "a".repeat(URL_MAX_CHARS - base.len()));
+        assert_eq!(url(&max), Ok(max.as_str()));
+        let over = format!("{max}a");
+        assert_eq!(
+            url(&over),
+            Err(ValidationError::UrlTooLong {
+                actual: URL_MAX_CHARS + 1
+            })
+        );
+    }
 
     #[test]
     fn query_length_boundaries() {

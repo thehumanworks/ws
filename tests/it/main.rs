@@ -12,4 +12,5 @@
 mod cli;
 mod client;
 mod common;
+mod fetch;
 mod lean_vectors;

@@ -15,7 +15,7 @@ use std::time::Duration;
 pub struct Canned {
     pub status: u16,
     pub headers: Vec<(String, String)>,
-    pub body: String,
+    pub body: Vec<u8>,
     pub delay: Duration,
 }
 
@@ -24,7 +24,22 @@ impl Canned {
         Self {
             status,
             headers: vec![("Content-Type".to_owned(), "application/json".to_owned())],
-            body: body.to_owned(),
+            body: body.as_bytes().to_vec(),
+            delay: Duration::ZERO,
+        }
+    }
+
+    /// A response with the given `Content-Type` (none when empty) and raw body.
+    pub fn page(status: u16, content_type: &str, body: &[u8]) -> Self {
+        let headers = if content_type.is_empty() {
+            Vec::new()
+        } else {
+            vec![("Content-Type".to_owned(), content_type.to_owned())]
+        };
+        Self {
+            status,
+            headers,
+            body: body.to_vec(),
             delay: Duration::ZERO,
         }
     }
@@ -128,7 +143,7 @@ impl MockServer {
                 );
                 // The client may have given up already (timeout tests); ignore write errors.
                 drop(stream.write_all(head.as_bytes()));
-                drop(stream.write_all(canned.body.as_bytes()));
+                drop(stream.write_all(&canned.body));
                 drop(stream.flush());
             }
         });

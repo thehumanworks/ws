@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 """Local stand-in for Cloudflare's Web Search endpoint, used by demo.sh --mock.
+It also serves one small HTML page (any GET) for the `ws fetch` part of the tour,
+and answers Browser Run's content endpoint with that page plus a line "added by
+JavaScript", for `ws fetch --render`.
 
 It speaks the documented request/response shapes, so the demo exercises the
 real `ws` binary end to end without credentials or billing. A gateway named
@@ -16,9 +19,40 @@ SNIPPETS = {
 }
 
 
+PAGE = b"""<!doctype html>
+<html><head><title>Rust async runtimes, compared</title>
+<style>body { font-family: sans-serif }</style>
+<script>console.log("never shown")</script></head>
+<body>
+<header><a href="/">Example Blog</a></header>
+<nav><a href="/posts">Posts</a> <a href="/about">About</a></nav>
+<main>
+<h1>Rust async runtimes</h1>
+<p>An <em>async runtime</em> polls futures. The common choices:</p>
+<ul><li><a href="https://tokio.rs">Tokio</a>: multi-threaded, the default pick</li>
+<li><a href="https://github.com/smol-rs/smol">smol</a>: small and modular</li></ul>
+<div id="comments"></div>
+</main>
+<aside class="sidebar">Subscribe to the newsletter</aside>
+<footer>Copyright Example Blog</footer>
+</body></html>
+"""
+
+
 class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):  # noqa: N802 (http.server API)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(PAGE)))
+        self.end_headers()
+        self.wfile.write(PAGE)
+
     def do_POST(self):  # noqa: N802 (http.server API)
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+        if self.path.endswith("/browser-run/content"):
+            html = PAGE.decode().replace(
+                '<div id="comments"></div>', "<p>2 comments, loaded by JavaScript.</p>")
+            return self.reply(200, {"success": True, "result": html})
         gateway = body["options"]["gateway"]["id"]
         if gateway == "unfunded":
             return self.reply(402, {"ok": False, "error": {

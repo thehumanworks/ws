@@ -217,6 +217,34 @@ fn oversized_bodies_are_rejected() {
 }
 
 #[test]
+fn the_size_cap_applies_after_decompression() {
+    use std::io::Write as _;
+    let padding = "x".repeat(usize::try_from(MAX_BODY_BYTES).unwrap() + 1024);
+    let body = format!(r#"{{"items":[{{"url":"u","title":"{padding}"}}]}}"#);
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
+    encoder.write_all(body.as_bytes()).unwrap();
+    let compressed = encoder.finish().unwrap();
+    assert!(compressed.len() < 64 * 1024);
+
+    let small = r#"{"items":[{"url":"u","title":"gzipped"}]}"#;
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
+    encoder.write_all(small.as_bytes()).unwrap();
+    let server = MockServer::start(vec![
+        Canned::page(200, "application/json", &compressed).header("Content-Encoding", "gzip"),
+        Canned::page(200, "application/json", &encoder.finish().unwrap())
+            .header("Content-Encoding", "gzip"),
+    ]);
+    let request = SearchRequest::new("q", Provider::Ceramic, 1, None, "default");
+    let err = search(&server, &request).unwrap_err();
+    assert!(
+        matches!(&err, Error::Transport(m) if m.contains("safety limit")),
+        "{err}"
+    );
+    let ok = search(&server, &request).unwrap();
+    assert_eq!(ok.response.items[0].title, "gzipped");
+}
+
+#[test]
 fn slow_responses_time_out() {
     let server = MockServer::start(vec![
         Canned::json(200, &ok_body()).delayed(Duration::from_secs(3)),

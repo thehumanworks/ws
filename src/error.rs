@@ -62,7 +62,42 @@ impl ApiError {
 
 impl fmt::Display for ApiError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Cloudflare API error: HTTP {}", self.status)?;
+        self.describe(f, "Cloudflare API error", self.hint())
+    }
+}
+
+/// An [`ApiError`] from Browser Run (`ws fetch --render`), which needs its own
+/// hints: the permissions and limits differ from web search.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenderError(pub ApiError);
+
+impl RenderError {
+    /// A suggestion for fixing the failure, when one is known.
+    #[must_use]
+    pub const fn hint(&self) -> Option<&'static str> {
+        match self.0.status {
+            401 | 403 => Some(
+                "--render needs CLOUDFLARE_API_TOKEN with Account > Browser Rendering > Edit, \
+                 and CLOUDFLARE_ACCOUNT_ID",
+            ),
+            429 => Some("Browser Run rate limit reached; wait before retrying (ws never retries)"),
+            422 => Some("Browser Run could not load the page; check the URL, or raise --timeout"),
+            500..=599 => Some("Cloudflare or the page failed; retrying later may help"),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for RenderError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0
+            .describe(f, "Cloudflare Browser Run error", self.hint())
+    }
+}
+
+impl ApiError {
+    fn describe(&self, f: &mut fmt::Formatter<'_>, label: &str, hint: Option<&str>) -> fmt::Result {
+        write!(f, "{label}: HTTP {}", self.status)?;
         if let Some(code) = &self.code {
             write!(f, " [{code}]")?;
         }
@@ -75,7 +110,7 @@ impl fmt::Display for ApiError {
         if let Some(id) = &self.request_id {
             write!(f, "\n  request id: {id}")?;
         }
-        if let Some(hint) = self.hint() {
+        if let Some(hint) = hint {
             write!(f, "\n  hint: {hint}")?;
         }
         Ok(())
@@ -103,6 +138,23 @@ pub enum Error {
     /// Cloudflare answered with something that is not a search result.
     #[error("unexpected response: {0}")]
     UnexpectedResponse(String),
+    /// A fetched page answered with a non-success HTTP status.
+    #[error("fetch failed: HTTP {status} from {url}")]
+    PageStatus {
+        /// HTTP status of the final response.
+        status: u16,
+        /// The URL that answered (after redirects), sanitised.
+        url: String,
+    },
+    /// The page's host is not on the public internet and `--allow-private` was not given.
+    #[error("blocked: {0}")]
+    PageBlocked(String),
+    /// Cloudflare Browser Run answered with an error (`ws fetch --render`).
+    #[error("{0}")]
+    Render(RenderError),
+    /// A fetched page is not something `ws` can show as text.
+    #[error("cannot read page: {0}")]
+    PageContent(String),
     /// Reading or writing a local file or stream failed.
     #[error("i/o error: {0}")]
     Io(#[from] io::Error),
@@ -114,9 +166,14 @@ impl Error {
     pub const fn exit_code(&self) -> u8 {
         match self {
             Self::Config(_) | Self::Invalid(_) | Self::Provider(_) => EXIT_USAGE,
-            Self::Transport(_) | Self::Api(_) | Self::UnexpectedResponse(_) | Self::Io(_) => {
-                EXIT_FAILURE
-            }
+            Self::Transport(_)
+            | Self::Api(_)
+            | Self::UnexpectedResponse(_)
+            | Self::PageStatus { .. }
+            | Self::PageContent(_)
+            | Self::PageBlocked(_)
+            | Self::Render(_)
+            | Self::Io(_) => EXIT_FAILURE,
         }
     }
 }
@@ -142,6 +199,30 @@ mod tests {
             Error::UnexpectedResponse("x".into()).exit_code(),
             EXIT_FAILURE
         );
+        let status = Error::PageStatus {
+            status: 404,
+            url: "https://a.example/x".into(),
+        };
+        assert_eq!(status.exit_code(), EXIT_FAILURE);
+        assert_eq!(
+            status.to_string(),
+            "fetch failed: HTTP 404 from https://a.example/x"
+        );
+        assert_eq!(Error::PageContent("x".into()).exit_code(), EXIT_FAILURE);
+        assert_eq!(Error::PageBlocked("x".into()).exit_code(), EXIT_FAILURE);
+        let render = Error::Render(RenderError(ApiError {
+            status: 403,
+            code: Some("10000".into()),
+            message: Some("Authentication error".into()),
+            ..ApiError::default()
+        }));
+        assert_eq!(render.exit_code(), EXIT_FAILURE);
+        let text = render.to_string();
+        assert!(
+            text.starts_with("Cloudflare Browser Run error: HTTP 403 [10000] Authentication error"),
+            "{text}"
+        );
+        assert!(text.contains("Browser Rendering > Edit"), "{text}");
     }
 
     #[test]

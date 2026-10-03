@@ -2,7 +2,9 @@ id: no-retry-loop-around-search
 valid:
   - let outcome = client.search(&credentials, &request)?;
   - for item in items { render(item); }
+  - let page = renderer.render(&credentials, url)?;
 invalid:
   - loop { if let Ok(o) = client.search(&c, &r) { break; } }
   - for attempt in 0..3 { let _ = client.search(&c, &r); }
   - while tries < 3 { result = client.search(&c, &r); }
+  - for attempt in 0..3 { let _ = renderer.render(&c, url); }

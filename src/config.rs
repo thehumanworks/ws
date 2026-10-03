@@ -290,6 +290,19 @@ pub fn resolve_credentials(overrides: &Overrides, env: Env<'_>) -> Result<Creden
     Ok(Credentials { account_id, token })
 }
 
+/// Resolves the request timeout: flag, then [`ENV_TIMEOUT_SECS`], then the
+/// default. It needs no credentials, so `ws fetch` can use it on its own.
+///
+/// # Errors
+/// [`Error::Config`] or [`Error::Invalid`] for a malformed or out-of-range value.
+pub fn resolve_timeout(flag: Option<u64>, env: Env<'_>) -> Result<Duration, Error> {
+    let env_timeout = env_value(env, ENV_TIMEOUT_SECS)?
+        .map(|v| parse_number(ENV_TIMEOUT_SECS, &v))
+        .transpose()?;
+    let (timeout, _) = pick(flag, env_timeout, None, DEFAULT_TIMEOUT_SECS);
+    Ok(Duration::from_secs(validate::timeout_secs(timeout)?))
+}
+
 /// Resolves every setting for a search from flags, environment and config file.
 ///
 /// # Errors
@@ -317,16 +330,7 @@ pub fn resolve(overrides: &Overrides, env: Env<'_>, file: &FileConfig) -> Result
         let _: &str = validate::alias(alias)?;
     }
 
-    let env_timeout = env_value(env, ENV_TIMEOUT_SECS)?
-        .map(|v| parse_number(ENV_TIMEOUT_SECS, &v))
-        .transpose()?;
-    let (timeout, _) = pick(
-        overrides.timeout_secs,
-        env_timeout,
-        None,
-        DEFAULT_TIMEOUT_SECS,
-    );
-    let timeout = Duration::from_secs(validate::timeout_secs(timeout)?);
+    let timeout = resolve_timeout(overrides.timeout_secs, env)?;
 
     let credentials = resolve_credentials(overrides, env)?;
 

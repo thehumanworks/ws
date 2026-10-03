@@ -8,6 +8,7 @@
 use std::path::Path;
 
 use ws::config::pick;
+use ws::fetch::ContentKind;
 use ws::provider::Provider;
 use ws::validate;
 
@@ -25,7 +26,7 @@ fn rust_agrees_with_the_lean_model_on_every_vector() {
         .join("lean")
         .join("vectors.txt");
     let text = std::fs::read_to_string(&path).unwrap();
-    let mut counts = [0_usize; 5];
+    let mut counts = [0_usize; 9];
 
     for line in text
         .lines()
@@ -70,6 +71,32 @@ fn rust_agrees_with_the_lean_model_on_every_vector() {
                 name.parse::<Provider>()
                     .map_or_else(|_| "err".to_owned(), |p| p.to_string())
             }
+            ["url", url] => {
+                counts[5] += 1;
+                verdict(validate::url(opt(url).unwrap_or_default()).is_ok()).to_owned()
+            }
+            ["url_len", n] => {
+                counts[6] += 1;
+                let base = "https://example.com/";
+                let padding = n.parse::<usize>().unwrap().saturating_sub(base.len());
+                let url = format!("{base}{}", "a".repeat(padding));
+                verdict(validate::url(&url).is_ok()).to_owned()
+            }
+            ["ipv4", address] => {
+                counts[7] += 1;
+                let address: std::net::Ipv4Addr = address.parse().unwrap();
+                verdict(validate::ipv4_is_public(address.octets())).to_owned()
+            }
+            ["mime", mime] => {
+                counts[8] += 1;
+                match ws::fetch::kind_of(mime) {
+                    Some(ContentKind::Html) => "html",
+                    Some(ContentKind::Markdown) => "markdown",
+                    Some(ContentKind::Text) => "text",
+                    None => "err",
+                }
+                .to_owned()
+            }
             _ => panic!("unknown vector: {line}"),
         };
         assert_eq!(
@@ -78,6 +105,11 @@ fn rust_agrees_with_the_lean_model_on_every_vector() {
         );
     }
 
-    // 4^3 provider layers, 2^3 gateway layers, limits 0..=20, 6 length boundaries, 6 names.
-    assert_eq!(counts, [64, 8, 21, 6, 6], "vector file is incomplete");
+    // 4^3 provider layers, 2^3 gateway layers, limits 0..=20, 6 length boundaries, 6 names,
+    // then fetch: 23 URLs, 6 URL lengths, 35 addresses, 18 media types.
+    assert_eq!(
+        counts,
+        [64, 8, 21, 6, 6, 23, 6, 35, 18],
+        "vector file is incomplete"
+    );
 }

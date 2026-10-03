@@ -1,6 +1,7 @@
 # Working on `ws`
 
-`ws` is a Rust CLI for Cloudflare's AI Gateway Web Search API. This file tells
+`ws` is a Rust CLI for Cloudflare's AI Gateway Web Search API, plus `ws fetch`
+for reading the pages a search finds. This file tells
 coding agents (and people) how to change it safely. `CLAUDE.md` points here.
 
 ## Setup
@@ -42,6 +43,11 @@ Run one test: `cargo test --test it precedence` or `cargo test --lib validate`.
 | `src/config.rs` | Settings and precedence (`pick`): flag > environment > file > default |
 | `src/validate.rs` | Bounds checked before any request is sent |
 | `src/client.rs` | Wire types, the one HTTP call, response and error decoding |
+| `src/fetch.rs` | `ws fetch`: one credential-free `GET` of any public page, returning a `Page` |
+| `src/render.rs` | `ws fetch --render`: one Cloudflare Browser Run call (with credentials), returning a `Page` |
+| `src/extract.rs` | Pure DOM rules that select a page's main content; title; HTML serialisation |
+| `src/markdown.rs` | Pure HTML/DOM-to-Markdown conversion |
+| `src/body.rs` | Reads a response body with a size cap that holds after decompression |
 | `src/output.rs` | Text and JSON rendering, terminal sanitising |
 | `src/provider.rs` | The three providers |
 | `tests/it/` | Integration tests; `common.rs` is a mock HTTP server |
@@ -64,6 +70,20 @@ When a check fails, fix the code; do not weaken the check.
 6. **No `#[allow]`.** Use `#[expect(lint, reason = "...")]` if a suppression is truly needed.
 7. **Document public items** (`missing_docs` is denied).
 8. **Validate before sending.** Invalid input exits 2 and makes no request.
+9. **Fetching is credential-free.** `src/fetch.rs`, `src/body.rs` and `src/markdown.rs`
+   must never see `Credentials`, the token, or set `Authorization`/`Cookie`: `ws fetch`
+   talks to arbitrary hosts and follows redirects. The one exception is
+   `src/render.rs`, a Cloudflare client like `client.rs`: it sends the token to
+   Cloudflare only, never follows redirects, and is opt-in (`--render`).
+10. **Never render automatically or in a loop.** Browser Run time is metered; `--render`
+    is the only trigger and it makes exactly one request.
+11. **Fetch only public addresses by default.** The resolver in `fetch.rs` refuses
+    non-public addresses on every hop; `--allow-private` is the only way around it.
+12. **Keep the page pipeline separate.** Retrieval (`fetch.rs`, `render.rs`) produces a
+    `fetch::Page`; selection (`extract.rs`) and conversion (`markdown.rs`) are pure. New
+    consumers such as structured scraping take a `Page` or `extract::Document` and live
+    in their own module. Extraction rules are fixed lists, not scores: change the lists
+    and their tests together, and keep `--raw` meaning "nothing removed".
 
 ## Tests
 
@@ -72,12 +92,17 @@ When a check fails, fix the code; do not weaken the check.
   environment and the mock server).
 - Tests must never contact Cloudflare. Use `MockServer` and `WS_API_BASE_URL`
   (accepted only for loopback addresses).
+- Tests of `ws fetch` (`tests/it/fetch.rs`) must never contact the internet either:
+  point them at `MockServer` with `Canned::page` and pass `--allow-private` (the
+  `run` helper does). `--render` tests use `WS_API_BASE_URL` like search.
 - When you observe a new response or error shape from the live API, add the body
   as a test fixture in `src/client.rs` with the date.
 
 ## Changing validation or precedence
 
-These are specified in Lean and the Rust code is tested against the model.
+These are specified in Lean and the Rust code is tested against the model. That
+includes the `ws fetch` rules in `lean/WsSpec/Fetch.lean`: URL validation, which
+IPv4 addresses are public, and how a media type is classified.
 
 1. Change the definitions and theorems in `lean/WsSpec/`. No `sorry`.
 2. `mise run proof:vectors` to regenerate `lean/vectors.txt`.
@@ -94,11 +119,14 @@ is what the next agent sees when the rule fires.
 
 Credentials come from the environment (`CLOUDFLARE_API_TOKEN`,
 `CLOUDFLARE_ACCOUNT_ID`; on the maintainer's machine `fnox` exports them).
-Never write them to a file, a test, or the transcript. Live searches cost money:
-run the fewest needed, with `--limit 1`, and say what you ran.
+Never write them to a file, a test, or the transcript. Live searches cost money
+and `--render` uses metered browser time: run the fewest needed (searches with
+`--limit 1`), and say what you ran.
 
 ```sh
 cargo run --release -- search "cloudflare workers" --limit 1
+cargo run --release -- fetch https://example.com   # free: no gateway, no credentials
+cargo run --release -- fetch https://example.com --render   # metered Browser Run time
 demo/demo.sh --mock     # full tour with no network or billing
 ```
 

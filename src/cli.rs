@@ -9,8 +9,12 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use crate::client::{Client, DEFAULT_BASE_URL, SearchRequest};
 use crate::config::{self, Env, FileConfig, Overrides};
 use crate::error::{EXIT_OK, EXIT_USAGE, Error};
-use crate::output;
+use crate::extract::Document;
+use crate::fetch::{self, Access, ContentKind, Fetcher, Page};
+use crate::markdown;
+use crate::output::{self, Treatment};
 use crate::provider::Provider;
+use crate::render::Renderer;
 use crate::validate;
 
 /// Test-only override of the API root; honoured only for loopback addresses so
@@ -19,8 +23,9 @@ pub const ENV_API_BASE_URL: &str = "WS_API_BASE_URL";
 
 const AFTER_HELP: &str = "\
 Environment:
-  CLOUDFLARE_API_TOKEN   API token (Workers AI: Read + AI Gateway: Read)   [required]
-  CLOUDFLARE_ACCOUNT_ID  Cloudflare account ID                             [required]
+  CLOUDFLARE_API_TOKEN   API token. search: Workers AI: Read + AI Gateway: Read;
+                         fetch --render: Browser Rendering: Edit; plain fetch: unused
+  CLOUDFLARE_ACCOUNT_ID  Cloudflare account ID          [search and fetch --render]
   WS_GATEWAY_ID          AI Gateway ID                                     [default: default]
   WS_PROVIDER            ceramic | exa | linkup                            [default: ceramic]
   WS_LIMIT               Results per search, 1-10                          [default: 10]
@@ -31,7 +36,8 @@ Environment:
 Precedence: flag > environment > config file > default.
 Exit status: 0 success, 1 request failed, 2 usage or configuration error.";
 
-/// Search the web from your terminal via Cloudflare's AI Gateway Web Search API.
+/// Search the web from your terminal via Cloudflare's AI Gateway Web Search
+/// API, and fetch the pages you find as Markdown.
 #[derive(Debug, Parser)]
 #[command(name = "ws", version, about, after_help = AFTER_HELP)]
 struct Cli {
@@ -43,6 +49,9 @@ struct Cli {
 enum Command {
     /// Run a web search (each search is billed by the provider).
     Search(SearchArgs),
+    /// Fetch a web page and print its main content as Markdown, HTML or JSON
+    /// (no credentials needed and nothing billed, unless --render is given).
+    Fetch(FetchArgs),
     /// List the available search providers and which one is selected.
     Providers {
         /// Emit JSON instead of a table.
@@ -85,6 +94,46 @@ struct SearchArgs {
     /// Show whole snippets in text output instead of the first 300 characters.
     #[arg(long, conflicts_with = "json")]
     full: bool,
+}
+
+#[derive(Debug, Args)]
+struct FetchArgs {
+    /// The page to fetch: an absolute http:// or https:// URL.
+    #[arg(value_name = "URL")]
+    url: String,
+    /// Output format.
+    #[arg(short, long, value_enum, default_value_t = Format::Markdown, value_name = "FORMAT")]
+    format: Format,
+    /// Keep the whole page: do not drop navigation, headers, footers, sidebars,
+    /// hidden elements or controls, and do not narrow to the main content.
+    #[arg(long)]
+    raw: bool,
+    /// Render the page in Cloudflare Browser Run first, so content built by
+    /// JavaScript is included. Needs `CLOUDFLARE_API_TOKEN` (Browser Rendering:
+    /// Edit) and `CLOUDFLARE_ACCOUNT_ID`; uses metered browser time.
+    #[arg(long)]
+    render: bool,
+    /// Allow hosts that are not on the public internet (localhost, private
+    /// networks, link-local). Refused by default.
+    #[arg(long, conflicts_with = "render")]
+    allow_private: bool,
+    /// Request timeout in seconds (1-300), redirects included.
+    #[arg(long, value_name = "SECS")]
+    timeout: Option<u64>,
+}
+
+/// Below this many visible characters a page is reported as nearly empty.
+const SPARSE_PAGE_CHARS: usize = 20;
+
+/// How `ws fetch` prints a page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum Format {
+    /// The main content converted to Markdown.
+    Markdown,
+    /// The main content as HTML (with --raw: the page exactly as served).
+    Html,
+    /// One JSON object: URLs, status, content type, title and Markdown.
+    Json,
 }
 
 #[derive(Debug, Subcommand)]
@@ -135,7 +184,7 @@ where
             };
         }
     };
-    match dispatch(cli.command, env, stdout) {
+    match dispatch(cli.command, env, stdout, stderr) {
         Ok(()) => EXIT_OK,
         // A closed pipe (`ws search x | head -1`) is not a failure.
         Err(Error::Io(error)) if error.kind() == io::ErrorKind::BrokenPipe => EXIT_OK,
@@ -146,9 +195,15 @@ where
     }
 }
 
-fn dispatch(command: Command, env: Env<'_>, stdout: &mut dyn Write) -> Result<(), Error> {
+fn dispatch(
+    command: Command,
+    env: Env<'_>,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> Result<(), Error> {
     match command {
         Command::Search(args) => search(args, env, stdout),
+        Command::Fetch(args) => fetch_page(&args, env, stdout, stderr),
         Command::Providers { json } => {
             let preferences =
                 config::resolve_preferences(&Overrides::default(), env, &load_file(env)?)?;
@@ -186,6 +241,13 @@ fn loopback_base_url(value: &str) -> Result<&str, Error> {
     }
 }
 
+fn api_base_url(env: Env<'_>) -> Result<String, Error> {
+    Ok(match config::env_value(env, ENV_API_BASE_URL)? {
+        Some(value) => loopback_base_url(&value)?.to_owned(),
+        None => DEFAULT_BASE_URL.to_owned(),
+    })
+}
+
 fn search(args: SearchArgs, env: Env<'_>, stdout: &mut dyn Write) -> Result<(), Error> {
     let overrides = Overrides {
         provider: args.provider,
@@ -198,10 +260,7 @@ fn search(args: SearchArgs, env: Env<'_>, stdout: &mut dyn Write) -> Result<(), 
     let query = args.query.join(" ");
     let query = validate::query(&query)?;
     let settings = config::resolve(&overrides, env, &load_file(env)?)?;
-    let base_url = match config::env_value(env, ENV_API_BASE_URL)? {
-        Some(value) => loopback_base_url(&value)?.to_owned(),
-        None => DEFAULT_BASE_URL.to_owned(),
-    };
+    let base_url = api_base_url(env)?;
 
     let request = SearchRequest::new(
         query,
@@ -217,6 +276,87 @@ fn search(args: SearchArgs, env: Env<'_>, stdout: &mut dyn Write) -> Result<(), 
         output::write_json(stdout, &settings.preferences, &outcome)?;
     } else {
         output::write_text(stdout, &settings.preferences, &outcome, args.full)?;
+    }
+    Ok(())
+}
+
+/// Gets the page: one credential-free request, or one Browser Run call.
+fn retrieve(args: &FetchArgs, env: Env<'_>) -> Result<Page, Error> {
+    let url = validate::url(&args.url)?;
+    let timeout = config::resolve_timeout(args.timeout, env)?;
+    if args.render {
+        let credentials = config::resolve_credentials(&Overrides::default(), env)?;
+        return Renderer::new(&api_base_url(env)?, timeout).render(&credentials, url);
+    }
+    let accept = match args.format {
+        Format::Html => fetch::ACCEPT_HTML,
+        Format::Markdown | Format::Json => fetch::ACCEPT_MARKDOWN,
+    };
+    let access = if args.allow_private {
+        Access::AllowPrivate
+    } else {
+        Access::PublicOnly
+    };
+    Fetcher::new(timeout, access).get(url, accept)
+}
+
+/// Says on stderr why a page came out nearly empty and which flag would help.
+fn note_if_sparse(args: &FetchArgs, content: &str, stderr: &mut dyn Write) {
+    if content.chars().filter(|c| !c.is_whitespace()).count() >= SPARSE_PAGE_CHARS {
+        return;
+    }
+    let advice = match (args.raw, args.render) {
+        (false, false) => "try --raw to keep the whole page, or --render if it needs JavaScript",
+        (true, false) => "try --render if it needs JavaScript",
+        (false, true) => "try --raw to keep the whole page",
+        (true, true) => return,
+    };
+    let _ = writeln!(
+        stderr,
+        "ws: note: almost no readable text was found; {advice}"
+    );
+}
+
+/// `ws fetch`: validate locally, retrieve once, select the content, render.
+fn fetch_page(
+    args: &FetchArgs,
+    env: Env<'_>,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> Result<(), Error> {
+    let page = retrieve(args, env)?;
+    let mut treatment = Treatment {
+        extracted: false,
+        rendered: args.render,
+    };
+    if page.kind != ContentKind::Html {
+        // Markdown and other text are shown as served.
+        return Ok(match args.format {
+            Format::Json => output::write_page_json(stdout, &page, None, treatment, &page.body),
+            Format::Markdown | Format::Html => output::write_page(stdout, &page.body),
+        }?);
+    }
+    if args.raw && args.format == Format::Html {
+        return Ok(output::write_page(stdout, &page.body)?);
+    }
+
+    let document = Document::parse(&page.body)?;
+    let title = document.title();
+    let document = if args.raw {
+        document
+    } else {
+        treatment.extracted = true;
+        document.main_content()
+    };
+    let content = match args.format {
+        Format::Html => document.to_html()?,
+        Format::Markdown | Format::Json => markdown::from_node(document.node()),
+    };
+    note_if_sparse(args, &content, stderr);
+    if args.format == Format::Json {
+        output::write_page_json(stdout, &page, title.as_deref(), treatment, &content)?;
+    } else {
+        output::write_page(stdout, &content)?;
     }
     Ok(())
 }

@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use crate::body::read_text;
 use crate::config::Credentials;
 use crate::error::{ApiError, Error};
 use crate::output::sanitize;
@@ -15,12 +16,13 @@ use crate::provider::Provider;
 
 /// Production API root.
 pub const DEFAULT_BASE_URL: &str = "https://api.cloudflare.com/client/v4";
-/// Largest response body accepted, as local protection against runaway responses.
+/// Largest response body accepted (after decompression), as local protection
+/// against runaway responses.
 pub const MAX_BODY_BYTES: u64 = 2 * 1024 * 1024;
 /// Longest excerpt of an unparseable error body shown to the user.
 const EXCERPT_CHARS: usize = 200;
 /// Header carrying the AI Gateway request ID.
-const REQUEST_ID_HEADER: &str = "cf-aig-request-id";
+pub(crate) const REQUEST_ID_HEADER: &str = "cf-aig-request-id";
 
 /// The JSON body of a search request.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -138,7 +140,7 @@ pub struct SearchOutcome {
     pub elapsed: Duration,
 }
 
-fn excerpt(body: &str) -> String {
+pub(crate) fn excerpt(body: &str) -> String {
     let clean = sanitize(body);
     let trimmed = clean.trim();
     let mut out: String = trimmed.chars().take(EXCERPT_CHARS).collect();
@@ -319,12 +321,7 @@ impl Client {
             .get(REQUEST_ID_HEADER)
             .and_then(|v| v.to_str().ok())
             .map(sanitize);
-        let text = response
-            .body_mut()
-            .with_config()
-            .limit(MAX_BODY_BYTES)
-            .read_to_string()
-            .map_err(|e| transport_error(&e))?;
+        let text = read_text(&mut response, MAX_BODY_BYTES).map_err(|e| transport_error(&e))?;
         let elapsed = started.elapsed();
 
         if !(200..300).contains(&status) {
@@ -349,7 +346,7 @@ impl Client {
     }
 }
 
-fn transport_error(error: &ureq::Error) -> Error {
+pub(crate) fn transport_error(error: &ureq::Error) -> Error {
     Error::Transport(if matches!(error, ureq::Error::Timeout(_)) {
         "timed out waiting for Cloudflare (see --timeout)".to_owned()
     } else if let ureq::Error::BodyExceedsLimit(limit) = error {

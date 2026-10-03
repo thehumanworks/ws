@@ -6,6 +6,7 @@ use serde::Serialize;
 
 use crate::client::{Item, Metadata, SearchOutcome};
 use crate::config::Preferences;
+use crate::fetch::Page;
 use crate::provider::Provider;
 
 /// Snippet length shown in text output unless `--full` is given.
@@ -17,6 +18,23 @@ pub const SNIPPET_CHARS: usize = 300;
 pub fn sanitize(text: &str) -> String {
     text.chars()
         .map(|c| if c.is_control() { ' ' } else { c })
+        .collect()
+}
+
+/// Like [`sanitize`], for multi-line page content: line feeds and tabs are
+/// kept, carriage returns are dropped, every other control character becomes
+/// a space.
+#[must_use]
+pub fn sanitize_block(text: &str) -> String {
+    text.chars()
+        .filter(|c| *c != '\r')
+        .map(|c| {
+            if c.is_control() && c != '\n' && c != '\t' {
+                ' '
+            } else {
+                c
+            }
+        })
         .collect()
 }
 
@@ -115,6 +133,66 @@ pub fn write_text(
     writeln!(out)
 }
 
+/// Writes page content (Markdown or HTML) terminal-safely, without leading
+/// or trailing blank space and ending with exactly one newline.
+///
+/// # Errors
+/// Any error from the writer.
+pub fn write_page(out: &mut dyn Write, content: &str) -> io::Result<()> {
+    writeln!(out, "{}", sanitize_block(content).trim())
+}
+
+/// The `ws fetch --format json` contract: one object describing the page.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PageJson<'a> {
+    url: &'a str,
+    final_url: &'a str,
+    status: u16,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content_type: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    title: Option<&'a str>,
+    extracted: bool,
+    rendered: bool,
+    markdown: &'a str,
+}
+
+/// How a page was obtained and reduced, reported in `--format json`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Treatment {
+    /// Whether only the main content was kept (false with `--raw` and for
+    /// pages that are not HTML).
+    pub extracted: bool,
+    /// Whether the page was rendered in a browser (`--render`).
+    pub rendered: bool,
+}
+
+/// Writes a fetched page as a single JSON object followed by a newline.
+///
+/// # Errors
+/// Any error from the writer.
+pub fn write_page_json(
+    out: &mut dyn Write,
+    page: &Page,
+    title: Option<&str>,
+    treatment: Treatment,
+    markdown: &str,
+) -> io::Result<()> {
+    let document = PageJson {
+        url: &page.url,
+        final_url: &page.final_url,
+        status: page.status,
+        content_type: page.content_type.as_deref(),
+        title,
+        extracted: treatment.extracted,
+        rendered: treatment.rendered,
+        markdown,
+    };
+    serde_json::to_writer_pretty(&mut *out, &document)?;
+    writeln!(out)
+}
+
 /// Writes the provider table for `ws providers`.
 ///
 /// # Errors
@@ -210,6 +288,62 @@ mod tests {
     fn sanitize_replaces_every_control_character() {
         assert_eq!(sanitize("a\u{1b}[31mb\r\nc\u{7}\u{9b}"), "a [31mb  c  ");
         assert_eq!(sanitize("plain ünïcode 🦀"), "plain ünïcode 🦀");
+    }
+
+    #[test]
+    fn sanitize_block_keeps_lines_and_tabs_only() {
+        assert_eq!(
+            sanitize_block("# a\r\n\tb\u{1b}[31mc\u{7}\n"),
+            "# a\n\tb [31mc \n"
+        );
+    }
+
+    #[test]
+    fn page_output_ends_with_exactly_one_newline() {
+        for content in ["# T\n\nbody", "\n  # T\n\nbody\n\n\n"] {
+            let mut buffer = Vec::new();
+            write_page(&mut buffer, content).unwrap();
+            assert_eq!(String::from_utf8(buffer).unwrap(), "# T\n\nbody\n");
+        }
+    }
+
+    #[test]
+    fn page_json_is_one_object_with_camel_case_keys() {
+        let page = Page {
+            url: "https://a.example".into(),
+            final_url: "https://a.example/home".into(),
+            status: 200,
+            content_type: None,
+            kind: crate::fetch::ContentKind::Html,
+            body: "<p>ignored</p>".into(),
+        };
+        let mut buffer = Vec::new();
+        let treatment = Treatment {
+            extracted: true,
+            rendered: false,
+        };
+        write_page_json(
+            &mut buffer,
+            &page,
+            Some("Home"),
+            treatment,
+            "line\u{1b}\nnext",
+        )
+        .unwrap();
+        assert!(!buffer.contains(&0x1b), "escape must be JSON-escaped");
+        let value: Value = serde_json::from_slice(&buffer).unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "url": "https://a.example",
+                "finalUrl": "https://a.example/home",
+                "status": 200,
+                "title": "Home",
+                "extracted": true,
+                "rendered": false,
+                "markdown": "line\u{1b}\nnext"
+            })
+        );
     }
 
     #[test]

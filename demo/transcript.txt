@@ -56,6 +56,67 @@ $ ws search 'rust async runtimes' --provider linkup --limit 1 --json
   }
 }
 
+# Read a page a search found: its main content as Markdown, no credentials, nothing billed
+$ ws fetch http://127.0.0.1:18787/example/1 --allow-private
+# Rust async runtimes
+
+An *async runtime* polls futures. The common choices:
+
+- [Tokio](https://tokio.rs): multi-threaded, the default pick
+- [smol](https://github.com/smol-rs/smol): small and modular
+
+# --raw keeps the whole page: header, navigation, sidebar and footer included
+$ ws fetch http://127.0.0.1:18787/example/1 --allow-private --raw
+[Example Blog](/)
+
+[Posts](/posts) [About](/about)
+
+# Rust async runtimes
+
+An *async runtime* polls futures. The common choices:
+
+- [Tokio](https://tokio.rs): multi-threaded, the default pick
+- [smol](https://github.com/smol-rs/smol): small and modular
+
+Subscribe to the newsletter
+
+Copyright Example Blog
+
+# The main content as JSON (URLs, status, title, Markdown) or as HTML
+$ ws fetch http://127.0.0.1:18787/example/1 --allow-private --format json
+{
+  "url": "http://127.0.0.1:18787/example/1",
+  "finalUrl": "http://127.0.0.1:18787/example/1",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "title": "Rust async runtimes, compared",
+  "extracted": true,
+  "rendered": false,
+  "markdown": "# Rust async runtimes\n\nAn *async runtime* polls futures. The common choices:\n\n- [Tokio](https://tokio.rs): multi-threaded, the default pick\n- [smol](https://github.com/smol-rs/smol): small and modular"
+}
+$ ws fetch http://127.0.0.1:18787/example/1 --allow-private --format html
+<h1>Rust async runtimes</h1>
+<p>An <em>async runtime</em> polls futures. The common choices:</p>
+<ul><li><a href="https://tokio.rs">Tokio</a>: multi-threaded, the default pick</li>
+<li><a href="https://github.com/smol-rs/smol">smol</a>: small and modular</li></ul>
+<div id="comments"></div>
+
+# Hosts that are not on the public internet are refused unless --allow-private is given
+$ ws fetch http://127.0.0.1:9/
+ws: blocked: 127.0.0.1 resolves to 127.0.0.1, which is not a public address; pass --allow-private to fetch it anyway
+[exit status 1]
+
+# --render loads the page in Cloudflare Browser Run first, so JavaScript content is included (metered)
+$ ws fetch http://127.0.0.1:18787/example/1 --render
+# Rust async runtimes
+
+An *async runtime* polls futures. The common choices:
+
+- [Tokio](https://tokio.rs): multi-threaded, the default pick
+- [smol](https://github.com/smol-rs/smol): small and modular
+
+2 comments, loaded by JavaScript.
+
 # Save a different default provider
 $ ws config set provider exa
 saved to /tmp/ws-demo/config.toml

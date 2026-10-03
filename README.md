@@ -2,6 +2,8 @@
 
 Web search from your terminal, through Cloudflare's
 [AI Gateway Web Search API](https://developers.cloudflare.com/web-search/).
+`ws fetch` then reads any page a search finds: its main content, as Markdown,
+HTML or JSON.
 One static binary for macOS, Linux and Windows.
 
 ```console
@@ -17,6 +19,11 @@ $ ws search "What is Cloudflare Workers?" --provider exa --limit 2
 2 results · provider exa · gateway iris · 4321 ms · request 4c256eee-e7bf-47c9-93e3-9fcb9c50b007
 ```
 
+```console
+$ ws fetch https://example.com
+This domain is for use in documentation examples without needing permission. This is not a service; avoid relying on it for testing and monitoring purposes.
+```
+
 ## Status
 
 The API is in open beta (announced 2026-10-02). `ws` has been run against the
@@ -25,6 +32,10 @@ results, and the response is the documented bare `{items, metadata}` object.
 `linkup` answered `402 web_search_payment_required` on the same gateway, so a
 successful Linkup search has not been observed. See
 [Observed live](#observed-live-2026-10-02).
+
+`ws fetch` requests the page directly, so it needs no token, no gateway and no
+credits. Only `ws fetch --render` uses Cloudflare (Browser Run); it has been run
+against the live endpoint too.
 
 ## Install
 
@@ -50,7 +61,8 @@ TLS is rustls with bundled roots, so there is no OpenSSL to install anywhere.
 ## Set up Cloudflare
 
 1. **API token**: create a custom token with **Account > Workers AI > Read** and
-   **Account > AI Gateway > Read**. Export it as `CLOUDFLARE_API_TOKEN`.
+   **Account > AI Gateway > Read**. Export it as `CLOUDFLARE_API_TOKEN`. Add
+   **Account > Browser Rendering > Edit** if you want `ws fetch --render`.
 2. **Account ID**: export it as `CLOUDFLARE_ACCOUNT_ID` (32 hex characters).
 3. **Gateway**: every account has a gateway called `default`. To use another, pass
    `--gateway` or set `WS_GATEWAY_ID`.
@@ -74,6 +86,11 @@ ws search "rust async runtimes" -n 5        # 1-10 results (default 10)
 ws search "rust async runtimes" -p exa      # choose a provider for this search
 ws search "rust async runtimes" --json      # one JSON object, complete and untruncated
 ws search "rust async runtimes" --full      # whole snippets instead of 300 characters
+ws fetch https://example.com/article        # a page's main content as Markdown
+ws fetch https://example.com/article -f json  # one JSON object: URLs, status, title, Markdown
+ws fetch https://example.com/article -f html  # the main content as HTML
+ws fetch https://example.com/article --raw  # the whole page, nothing removed
+ws fetch https://example.com/app --render   # run its JavaScript first (Cloudflare Browser Run)
 ws providers                                # the three providers; * marks the active one
 ws config set provider linkup               # save a default provider
 ws config set gateway team-gateway          # save a default gateway
@@ -91,6 +108,140 @@ ws config show                              # what is in effect, and where it ca
 
 Prices are a snapshot of Cloudflare's documentation on 2026-10-02.
 
+### Fetching pages
+
+`ws fetch <URL>` is the second half of "search, then read": it makes one `GET`
+straight to the page's host and prints the part worth reading.
+
+| `--format` | Output |
+|---|---|
+| `markdown` (default) | The main content converted to Markdown |
+| `html` | The main content as HTML (with `--raw`: the body exactly as served) |
+| `json` | One object with the request context and the Markdown (below) |
+
+```json
+{
+  "url": "https://example.com",
+  "finalUrl": "https://example.com/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "title": "Example Domain",
+  "extracted": true,
+  "rendered": false,
+  "markdown": "This domain is for use in documentation examples …"
+}
+```
+
+`contentType` and `title` are omitted when the page has none. `extracted` says
+whether only the main content was kept; `rendered` whether `--render` was used.
+
+#### What is kept
+
+By default `ws fetch` keeps what an agent came for and drops the rest. The
+rules are fixed lists, not scores, so the same page always gives the same
+answer:
+
+1. **Removed everywhere:**
+   - non-content: `<head>`, `script`, `style`, `noscript`, `template`, `iframe`,
+     `svg`, `canvas`, comments, inline `data:` images;
+   - page furniture and controls: `nav`, `footer`, `aside`, `dialog`, `menu`,
+     `button`, `input`, `select`, `textarea`, `datalist`, and a `<header>` that
+     is not inside `<main>` or `<article>`;
+   - ARIA roles `navigation`, `banner`, `contentinfo`, `complementary`, `search`,
+     `dialog`, `alertdialog`, `menu`, `menubar`, `toolbar`, `tablist`;
+   - hidden elements: `hidden`, `aria-hidden="true"`, inline `display:none` or
+     `visibility:hidden`;
+   - elements whose `class` or `id` contains a boilerplate word (`nav`, `navbar`,
+     `navigation`, `menu`, `dropdown`, `sidebar`, `breadcrumb(s)`, `footer`,
+     `cookie(s)`, `consent`, `advert`, `advertisement`, `ads`, `promo`,
+     `newsletter`, `subscribe`, `share`, `sharing`, `social`, `popup`, `modal`,
+     `toolbar`), unless the element holds half or more of the page's text, in
+     which case the name is a layout wrapper such as `has-sidebar`.
+2. **Then narrowed** to the first `<main>` (or `role="main"`) that has text;
+   failing that the only `<article>`; failing that the `<body>`.
+
+`--raw` switches both steps off: the whole page is converted (only `<head>`,
+scripts, styles and the other non-content elements are left out of the
+Markdown), and `--format html --raw` is the response body as served.
+
+Removed elements are never brought back, so a page that is all navigation comes
+out empty; `ws` then says so on stderr and suggests `--raw` or `--render`.
+Forms are kept (some sites wrap the whole page in one); only their controls go.
+Pages already served as Markdown, plain text, JSON or XML are printed as
+served: there is nothing to extract from.
+
+Measured on 2026-10-03 (Markdown bytes, `--raw` then default):
+
+| Page | Whole page | Main content |
+|---|---:|---:|
+| MDN, the `<main>` element | 36,081 | 7,834 |
+| Wikipedia, "Rust (programming language)" | 287,305 | 203,910 |
+| docs.rs, `ureq` | 28,825 | 23,466 |
+| BBC News front page | 22,155 | 16,907 |
+| Hacker News front page (tables, no landmarks) | 10,778 | 10,778 |
+
+#### JavaScript pages: `--render`
+
+A plain fetch does not run JavaScript, so a page built in the browser comes
+back nearly empty. `--render` asks
+[Cloudflare Browser Run](https://developers.cloudflare.com/browser-run/quick-actions/content-endpoint/)
+to load the page in a real browser (waiting for the network to settle) and
+return the resulting HTML, which then goes through the same extraction:
+
+```console
+$ ws fetch https://quotes.toscrape.com/js/
+# [Quotes to Scrape](/)
+
+[Login](/login)
+$ ws fetch https://quotes.toscrape.com/js/ --render
+# [Quotes to Scrape](/)
+
+[Login](/login)
+
+“The world as we have created it is a process of our thinking. It cannot be changed without changing our thinking.”by Albert Einstein
+…
+```
+
+Unlike a plain fetch, `--render` is a Cloudflare API call: it needs
+`CLOUDFLARE_API_TOKEN` (with **Browser Rendering > Edit**) and
+`CLOUDFLARE_ACCOUNT_ID`, it uses browser time that Cloudflare meters, and the
+page is loaded from Cloudflare's network, not yours. It is therefore never
+automatic: `ws` renders only when asked, makes exactly one request and never
+retries. `finalUrl` is the requested URL (Browser Run does not report
+redirects).
+
+#### Safety and limits
+
+- **No credentials on a plain fetch.** Cloudflare is not involved and the API
+  token is never sent: `ws fetch` works with `CLOUDFLARE_*` unset. The only
+  settings it reads are `--timeout` / `WS_TIMEOUT_SECS`.
+- **Public addresses only.** A host that resolves to loopback, a private or
+  link-local network (including cloud metadata at `169.254.169.254`),
+  carrier-grade NAT, multicast or the IPv6 equivalents is refused with exit 1
+  before any connection is made. The check runs after DNS resolution and again
+  on every redirect, so neither a hostname nor a redirect can reach inside your
+  network. `--allow-private` turns it off for when you do want `localhost`.
+  (If `HTTP_PROXY`/`HTTPS_PROXY` is set, the proxy resolves the target and this
+  check cannot see it.)
+- **Markdown where the site offers it.** The request says
+  `Accept: text/markdown` first, so sites that serve Markdown to agents are
+  passed through unconverted.
+- **Redirects are followed** (up to 10); `finalUrl` is the page that answered.
+- **Bounded.** gzip is accepted, and pages over 5 MiB *after decompression* are
+  refused, as are non-text types such as PDFs and images (decided from
+  `Content-Type`, before the body is downloaded). Declared charsets are decoded
+  to UTF-8.
+- **Terminal-safe.** Control characters other than newline and tab are
+  neutralised in Markdown and HTML output; JSON escapes them.
+- A non-2xx answer, a blocked host, a timeout or an unreadable page exits 1; a
+  URL that is not absolute `http://` or `https://` exits 2 and sends nothing.
+- Not done: robots.txt, crawling, pagination, truncation.
+
+The pieces are separate on purpose: `src/fetch.rs` and `src/render.rs` each
+retrieve a `Page`, `src/extract.rs` selects the content, `src/markdown.rs`
+converts it, `src/output.rs` prints it. Structured scraping is not implemented;
+it would be another consumer of `Page` or `extract::Document`.
+
 ### Configuration
 
 Each setting is taken from the first place that provides it:
@@ -104,8 +255,8 @@ Each setting is taken from the first place that provides it:
 | Result limit | `-n`, `--limit` | `WS_LIMIT` | | `10` |
 | BYOK alias | `--byok-alias` | `WS_BYOK_ALIAS` | | none (credits) |
 | Timeout (s) | `--timeout` | `WS_TIMEOUT_SECS` | | `30` |
-| Account ID | `--account-id` | `CLOUDFLARE_ACCOUNT_ID` | | required |
-| API token | | `CLOUDFLARE_API_TOKEN` | | required |
+| Account ID | `--account-id` (search) | `CLOUDFLARE_ACCOUNT_ID` | | required for search and `fetch --render` |
+| API token | | `CLOUDFLARE_API_TOKEN` | | required for search and `fetch --render` |
 | Config path | | `WS_CONFIG` | | see below |
 
 So a saved default provider can be overridden for a shell session with
@@ -155,17 +306,19 @@ ws: Cloudflare API error: HTTP 402 [web_search_payment_required]
 ```
 
 `ws` never retries: every search is billed and the API has no idempotency key.
-It does not follow redirects, and caps responses at 2 MiB.
+A search does not follow redirects (the token must not travel), and caps
+responses at 2 MiB after decompression. `ws fetch` carries no token, so it does
+follow redirects; see [Fetching pages](#fetching-pages).
 
 ## Demo
 
 ```sh
 demo/demo.sh --mock    # full tour against a local mock: no credentials, no billing
-demo/demo.sh           # the same tour against Cloudflare (billed)
+demo/demo.sh           # the same tour against Cloudflare (searches are billed; one --render uses Browser Run time)
 ```
 
 [`demo/transcript.txt`](demo/transcript.txt) is the recorded output of the mock
-tour: providers, searching, JSON, saving a default provider, overriding it by
+tour: providers, searching, JSON, fetching a page (main content, `--raw`, each format, a blocked host, `--render`), saving a default provider, overriding it by
 environment and by flag, choosing a gateway, and the error cases.
 
 ## Verification
@@ -174,11 +327,11 @@ environment and by flag, choosing a gateway, and the error cases.
 
 | Layer | What it checks | Run |
 |---|---|---|
-| Unit and integration tests | 83 tests: validation boundaries (Unicode included), wire format, precedence, every error shape, redirects, timeouts, oversize bodies, the compiled binary | `mise run test` |
-| Lean 4 proofs | Precedence, provider parsing and request bounds, proved for all inputs | `mise run proof` |
-| Model conformance | The Rust code is replayed against 105 decisions generated from the Lean model | part of `mise run test` |
+| Unit and integration tests | 136 tests: validation boundaries (Unicode included), wire format, precedence, every error shape, redirects, timeouts, oversize and gzip-bomb bodies, content extraction, page fetching in every format, private-address blocking, `--render`, the compiled binary | `mise run test` |
+| Lean 4 proofs | Precedence, provider parsing, search request bounds, and the fetch rules (URLs, public addresses, media types), proved for all inputs | `mise run proof` |
+| Model conformance | The Rust code is replayed against 187 decisions generated from the Lean model | part of `mise run test` |
 | Clippy, strict | `pedantic` + `nursery` + no `unwrap`/`panic`/indexing/`allow`, warnings denied | `mise run lint` |
-| ast-grep rules | 8 project rules with their own tests | `mise run rules` |
+| ast-grep rules | 9 project rules with their own tests | `mise run rules` |
 | Cross builds | Linux x86_64/arm64 and Windows binaries link | `mise run cross` |
 
 ### What Lean proves
@@ -196,12 +349,23 @@ users when wrong, with no `sorry` and only Lean's standard axioms:
 - **Requests** (`Validation.lean`): any request that validation lets through has
   a 1-1,024 character query, a limit of 1-10 and a non-empty gateway; valid input
   is never refused; validation never alters the input.
+- **Fetching** (`Fetch.lean`): an accepted URL is at most 2,048 characters, has
+  no space or control character (so it cannot smuggle a header line), and has an
+  `http`/`https` scheme followed by a host; loopback, the RFC 1918 ranges,
+  link-local, `0.0.0.0/8` and multicast upwards are never public; only
+  `text/html` and `application/xhtml+xml` are treated as HTML.
 
 The proofs are about the Lean model, not the Rust source. The link between them
 is `lean/vectors.txt`: the model prints its decision for all 64 provider-layer
 combinations, 8 gateway combinations, limits 0-20, the query-length boundaries
-and provider names, and `tests/it/lean_vectors.rs` requires the Rust code to
+and provider names, plus 23 URLs, 6 URL lengths, 35 addresses and 18 media
+types for fetch, and `tests/it/lean_vectors.rs` requires the Rust code to
 agree on every line. `mise run proof` fails if that file is stale.
+
+The fetch model is narrower than the code in three stated ways: Rust also
+rejects Unicode whitespace in URLs, normalises a `Content-Type` before
+classifying it, and applies the address rule to IPv6 (tested in Rust only). The
+content-extraction rules are not modelled; they are fixed lists with Rust tests.
 
 ### ast-grep rules
 
@@ -213,8 +377,9 @@ agree on every line. `mise run proof` fails if that file is stale.
 | `no-process-exit` | Exit status is returned, not forced |
 | `no-lint-allow` | No `#[allow]`; use `#[expect(.., reason)]` |
 | `no-byte-length-on-query` | Query length is counted in characters |
-| `no-retry-loop-around-search` | A billed request is never retried in a loop |
+| `no-retry-loop-around-search` | A billed request (search or render) is never retried in a loop |
 | `no-token-in-output` | The token is never formatted into output |
+| `no-credentials-in-fetch` | The page-fetching modules never touch credentials or auth headers |
 
 ### Observed live (2026-10-02)
 
@@ -239,10 +404,18 @@ The validation probes were not billed; the successful searches were (six in tota
 
 These bodies are test fixtures in `src/client.rs`.
 
+On 2026-10-03, Browser Run's `/browser-run/content` answered `200` with
+`{"success": true, "result": "<html>…"}` for `example.com` and for a
+JavaScript-built page (`quotes.toscrape.com/js/`), whose quotes appear only when
+rendered. That success shape is a fixture in `src/render.rs`. No Browser Run
+error has been observed live; the error tests use Cloudflare's standard
+`{"success": false, "errors": [...]}` envelope.
+
 ## Not included
 
 - No MCP server. `docs/MCP-RUST.md` plans one; this project is the CLI only.
 - No retries, pagination, domain or date filters: the API documents none.
+- No structured scraping (selectors, schemas) or crawling: `ws fetch` reads one page.
 
 ## Contributing
 

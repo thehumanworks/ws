@@ -1,12 +1,14 @@
 id: no-retry-loop-around-search
 language: rust
 severity: error
-message: Never call `search` in a loop; each call is a billed request with no idempotency key.
+message: Never call `search` or `render` in a loop; each call is a billed request with no idempotency key.
 note: Automatic retries can double-charge the user. Surface the error and let them decide.
 files:
   - src/**/*.rs
 rule:
-  pattern: $C.search($$$A)
+  any:
+    - pattern: $C.search($$$A)
+    - pattern: $C.render($$$A)
   inside:
     stopBy: end
     any:
