@@ -15,8 +15,8 @@ jobs:
         include:
           - { target: aarch64-apple-darwin, os: macos-latest, zig: false }
           - { target: x86_64-apple-darwin, os: macos-latest, zig: false }
-          - { target: x86_64-unknown-linux-musl, os: ubuntu-latest, zig: true }
-          - { target: aarch64-unknown-linux-musl, os: ubuntu-latest, zig: true }
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest, zig: true, glibc: '2.35' }
+          - { target: aarch64-unknown-linux-gnu, os: ubuntu-latest, zig: true, glibc: '2.38' }
           - { target: x86_64-pc-windows-msvc, os: windows-latest, zig: false }
     runs-on: ${{ matrix.os }}
     steps:
@@ -32,17 +32,20 @@ jobs:
         shell: bash
         run: |
           if [ "${{ matrix.zig }}" = "true" ]; then
-            cargo zigbuild --release --locked --target ${{ matrix.target }}
+            cargo zigbuild --release --locked --target ${{ matrix.target }}.${{ matrix.glibc }}
           else
             cargo build --release --locked --target ${{ matrix.target }}
           fi
       - name: Smoke test
-        if: matrix.target != 'aarch64-unknown-linux-musl'
+        if: matrix.target != 'aarch64-unknown-linux-gnu'
         shell: bash
         run: |
           bin="target/${{ matrix.target }}/release/ws"
           "$bin" --version
           "$bin" providers
+      - name: Bundled browser runtime smoke (local only)
+        if: runner.os != 'Windows' && matrix.target != 'aarch64-unknown-linux-gnu'
+        run: python3 scripts/smoke-local-browser.py target/${{ matrix.target }}/release/ws
       - name: Package
         shell: bash
         run: |
@@ -53,6 +56,7 @@ jobs:
             cp "target/${{ matrix.target }}/release/ws.exe" "$name/"
             7z a "$name.zip" "$name" > /dev/null
           else
+            sh scripts/package-lightpanda-source.sh "$name"
             cp "target/${{ matrix.target }}/release/ws" "$name/"
             tar -czf "$name.tar.gz" "$name"
           fi

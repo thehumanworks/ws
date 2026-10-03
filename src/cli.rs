@@ -3,14 +3,18 @@
 use std::ffi::OsString;
 use std::io::{self, Write};
 use std::path::PathBuf;
+use std::time::Instant;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
+use crate::backend::Backend;
+use crate::brave;
 use crate::client::{Client, DEFAULT_BASE_URL, SearchRequest};
 use crate::config::{self, Env, FileConfig, Overrides};
 use crate::error::{EXIT_OK, EXIT_USAGE, Error};
 use crate::extract::Document;
 use crate::fetch::{self, Access, ContentKind, Fetcher, Page};
+use crate::lightpanda::{self, Browser, Dump, Rendered, Request};
 use crate::markdown;
 use crate::output::{self, Treatment};
 use crate::provider::Provider;
@@ -23,6 +27,7 @@ pub const ENV_API_BASE_URL: &str = "WS_API_BASE_URL";
 
 const AFTER_HELP: &str = "\
 Environment:
+  WS_BACKEND             lightpanda | cloudflare                 [platform default]
   CLOUDFLARE_API_TOKEN   API token. search: Workers AI: Read + AI Gateway: Read;
                          fetch --render: Browser Rendering: Edit; plain fetch: unused
   CLOUDFLARE_ACCOUNT_ID  Cloudflare account ID          [search and fetch --render]
@@ -36,8 +41,8 @@ Environment:
 Precedence: flag > environment > config file > default.
 Exit status: 0 success, 1 request failed, 2 usage or configuration error.";
 
-/// Search the web from your terminal via Cloudflare's AI Gateway Web Search
-/// API, and fetch the pages you find as Markdown.
+/// Search with the bundled Lightpanda browser or Cloudflare, and read pages
+/// as Markdown, HTML, JSON or a text-only PNG.
 #[derive(Debug, Parser)]
 #[command(name = "ws", version, about, after_help = AFTER_HELP)]
 struct Cli {
@@ -47,18 +52,20 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Run a web search (each search is billed by the provider).
+    /// Search Brave locally, or a billed provider with --backend cloudflare.
     Search(SearchArgs),
-    /// Fetch a web page and print its main content as Markdown, HTML or JSON
-    /// (no credentials needed and nothing billed, unless --render is given).
+    /// Read a page locally or via direct HTTP; Cloudflare --render is metered.
     Fetch(FetchArgs),
     /// List the available search providers and which one is selected.
     Providers {
+        /// Runtime whose providers to list.
+        #[arg(long)]
+        backend: Option<Backend>,
         /// Emit JSON instead of a table.
         #[arg(long)]
         json: bool,
     },
-    /// Show or change saved defaults (provider and gateway).
+    /// Show or change saved defaults (backend and Cloudflare preferences).
     Config {
         #[command(subcommand)]
         action: ConfigAction,
@@ -67,6 +74,9 @@ enum Command {
 
 #[derive(Debug, Args)]
 struct SearchArgs {
+    /// Retrieval runtime (Lightpanda uses Brave; Cloudflare uses --provider).
+    #[arg(long)]
+    backend: Option<Backend>,
     /// The search query (1-1,024 characters); several words are joined with spaces.
     #[arg(required = true, value_name = "QUERY")]
     query: Vec<String>,
@@ -98,6 +108,9 @@ struct SearchArgs {
 
 #[derive(Debug, Args)]
 struct FetchArgs {
+    /// Retrieval runtime: bundled local browser or Cloudflare/direct HTTP.
+    #[arg(long)]
+    backend: Option<Backend>,
     /// The page to fetch: an absolute http:// or https:// URL.
     #[arg(value_name = "URL")]
     url: String,
@@ -108,14 +121,13 @@ struct FetchArgs {
     /// hidden elements or controls, and do not narrow to the main content.
     #[arg(long)]
     raw: bool,
-    /// Render the page in Cloudflare Browser Run first, so content built by
-    /// JavaScript is included. Needs `CLOUDFLARE_API_TOKEN` (Browser Rendering:
-    /// Edit) and `CLOUDFLARE_ACCOUNT_ID`; uses metered browser time.
+    /// On Cloudflare, opt into metered Browser Run (requires credentials).
+    /// Lightpanda already renders JavaScript, so this flag is redundant there.
     #[arg(long)]
     render: bool,
     /// Allow hosts that are not on the public internet (localhost, private
     /// networks, link-local). Refused by default.
-    #[arg(long, conflicts_with = "render")]
+    #[arg(long)]
     allow_private: bool,
     /// Request timeout in seconds (1-300), redirects included.
     #[arg(long, value_name = "SECS")]
@@ -130,10 +142,12 @@ const SPARSE_PAGE_CHARS: usize = 20;
 enum Format {
     /// The main content converted to Markdown.
     Markdown,
-    /// The main content as HTML (with --raw: the page exactly as served).
+    /// Main content as HTML (--raw: whole rendered DOM or direct HTTP body).
     Html,
     /// One JSON object: URLs, status, content type, title and Markdown.
     Json,
+    /// Whole-page text-only PNG (Lightpanda only); writes binary bytes.
+    Png,
 }
 
 #[derive(Debug, Subcommand)]
@@ -158,6 +172,8 @@ enum ConfigAction {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum ConfigKey {
+    /// Default retrieval runtime.
+    Backend,
     /// Default search provider.
     Provider,
     /// Default AI Gateway ID.
@@ -167,6 +183,22 @@ enum ConfigKey {
 /// Runs `ws` with injected arguments, environment and output streams and
 /// returns the process exit status.
 pub fn run<I, T>(args: I, env: Env<'_>, stdout: &mut dyn Write, stderr: &mut dyn Write) -> u8
+where
+    I: IntoIterator<Item = T>,
+    T: Into<OsString> + Clone,
+{
+    run_with_browser(args, env, stdout, stderr, &lightpanda::Bundled::new(env))
+}
+
+/// Runs the CLI with an injected browser, for deterministic credential-free
+/// integration tests. Normal execution always uses [`lightpanda::Bundled`].
+pub fn run_with_browser<I, T>(
+    args: I,
+    env: Env<'_>,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+    browser: &dyn Browser,
+) -> u8
 where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
@@ -184,7 +216,7 @@ where
             };
         }
     };
-    match dispatch(cli.command, env, stdout, stderr) {
+    match dispatch(cli.command, env, stdout, stderr, browser) {
         Ok(()) => EXIT_OK,
         // A closed pipe (`ws search x | head -1`) is not a failure.
         Err(Error::Io(error)) if error.kind() == io::ErrorKind::BrokenPipe => EXIT_OK,
@@ -200,13 +232,17 @@ fn dispatch(
     env: Env<'_>,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
+    browser: &dyn Browser,
 ) -> Result<(), Error> {
     match command {
-        Command::Search(args) => search(args, env, stdout),
-        Command::Fetch(args) => fetch_page(&args, env, stdout, stderr),
-        Command::Providers { json } => {
-            let preferences =
-                config::resolve_preferences(&Overrides::default(), env, &load_file(env)?)?;
+        Command::Search(args) => search(args, env, stdout, browser),
+        Command::Fetch(args) => fetch_page(&args, env, stdout, stderr, browser),
+        Command::Providers { backend, json } => {
+            let file = load_file(env)?;
+            if config::resolve_backend(backend, env, &file)?.0 == Backend::Lightpanda {
+                return Ok(output::write_local_providers(stdout, json)?);
+            }
+            let preferences = config::resolve_preferences(&Overrides::default(), env, &file)?;
             Ok(output::write_providers(stdout, preferences.provider, json)?)
         }
         Command::Config { action } => configure(action, env, stdout),
@@ -248,7 +284,41 @@ fn api_base_url(env: Env<'_>) -> Result<String, Error> {
     })
 }
 
-fn search(args: SearchArgs, env: Env<'_>, stdout: &mut dyn Write) -> Result<(), Error> {
+fn search(
+    args: SearchArgs,
+    env: Env<'_>,
+    stdout: &mut dyn Write,
+    browser: &dyn Browser,
+) -> Result<(), Error> {
+    let query = args.query.join(" ");
+    let query = validate::query(&query)?;
+    let file = load_file(env)?;
+    let backend = config::resolve_backend(args.backend, env, &file)?.0;
+    if backend == Backend::Lightpanda {
+        if args.provider.is_some()
+            || args.gateway.is_some()
+            || args.byok_alias.is_some()
+            || args.account_id.is_some()
+        {
+            return Err(Error::Config("--provider, --gateway, --byok-alias and --account-id require --backend cloudflare; Lightpanda searches Brave".to_owned()));
+        }
+        let limit = config::resolve_limit(args.limit, env)?;
+        let start = Instant::now();
+        let result = browser.retrieve(&Request {
+            url: brave::search_url(query),
+            dump: Dump::Html,
+            access: Access::PublicOnly,
+            timeout: config::resolve_timeout(args.timeout, env)?,
+        })?;
+        let Rendered::Html(page) = result else {
+            return Err(Error::UnexpectedResponse(
+                "browser returned PNG for a search".to_owned(),
+            ));
+        };
+        let items = brave::extract(&page.body, limit)?;
+        output::write_local_search(stdout, &items, start.elapsed(), args.json, args.full)?;
+        return Ok(());
+    }
     let overrides = Overrides {
         provider: args.provider,
         gateway_id: args.gateway,
@@ -257,9 +327,7 @@ fn search(args: SearchArgs, env: Env<'_>, stdout: &mut dyn Write) -> Result<(), 
         account_id: args.account_id,
         timeout_secs: args.timeout,
     };
-    let query = args.query.join(" ");
-    let query = validate::query(&query)?;
-    let settings = config::resolve(&overrides, env, &load_file(env)?)?;
+    let settings = config::resolve(&overrides, env, &file)?;
     let base_url = api_base_url(env)?;
 
     let request = SearchRequest::new(
@@ -285,12 +353,17 @@ fn retrieve(args: &FetchArgs, env: Env<'_>) -> Result<Page, Error> {
     let url = validate::url(&args.url)?;
     let timeout = config::resolve_timeout(args.timeout, env)?;
     if args.render {
+        if args.allow_private {
+            return Err(Error::Config(
+                "--allow-private cannot be used with --render on the cloudflare backend".to_owned(),
+            ));
+        }
         let credentials = config::resolve_credentials(&Overrides::default(), env)?;
         return Renderer::new(&api_base_url(env)?, timeout).render(&credentials, url);
     }
     let accept = match args.format {
         Format::Html => fetch::ACCEPT_HTML,
-        Format::Markdown | Format::Json => fetch::ACCEPT_MARKDOWN,
+        Format::Markdown | Format::Json | Format::Png => fetch::ACCEPT_MARKDOWN,
     };
     let access = if args.allow_private {
         Access::AllowPrivate
@@ -301,11 +374,11 @@ fn retrieve(args: &FetchArgs, env: Env<'_>) -> Result<Page, Error> {
 }
 
 /// Says on stderr why a page came out nearly empty and which flag would help.
-fn note_if_sparse(args: &FetchArgs, content: &str, stderr: &mut dyn Write) {
+fn note_if_sparse(args: &FetchArgs, rendered: bool, content: &str, stderr: &mut dyn Write) {
     if content.chars().filter(|c| !c.is_whitespace()).count() >= SPARSE_PAGE_CHARS {
         return;
     }
-    let advice = match (args.raw, args.render) {
+    let advice = match (args.raw, rendered) {
         (false, false) => "try --raw to keep the whole page, or --render if it needs JavaScript",
         (true, false) => "try --render if it needs JavaScript",
         (false, true) => "try --raw to keep the whole page",
@@ -323,17 +396,52 @@ fn fetch_page(
     env: Env<'_>,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
+    browser: &dyn Browser,
 ) -> Result<(), Error> {
-    let page = retrieve(args, env)?;
+    let backend = config::resolve_backend(args.backend, env, &load_file(env)?)?.0;
+    if backend == Backend::Cloudflare && args.format == Format::Png {
+        return Err(Error::Config("--format png requires --backend lightpanda; PNG never starts a billed Cloudflare render".to_owned()));
+    }
+    let page = if backend == Backend::Lightpanda {
+        let url = validate::url(&args.url)?;
+        let result = browser.retrieve(&Request {
+            url: url.to_owned(),
+            dump: if args.format == Format::Png {
+                Dump::Png
+            } else {
+                Dump::Html
+            },
+            access: if args.allow_private {
+                Access::AllowPrivate
+            } else {
+                Access::PublicOnly
+            },
+            timeout: config::resolve_timeout(args.timeout, env)?,
+        })?;
+        match result {
+            Rendered::Png(bytes) if args.format == Format::Png => {
+                stdout.write_all(&bytes)?;
+                return Ok(());
+            }
+            Rendered::Html(page) if args.format != Format::Png => page,
+            Rendered::Html(_) | Rendered::Png(_) => {
+                return Err(Error::UnexpectedResponse(
+                    "browser returned the wrong output format".to_owned(),
+                ));
+            }
+        }
+    } else {
+        retrieve(args, env)?
+    };
     let mut treatment = Treatment {
         extracted: false,
-        rendered: args.render,
+        rendered: args.render || backend == Backend::Lightpanda,
     };
     if page.kind != ContentKind::Html {
         // Markdown and other text are shown as served.
         return Ok(match args.format {
             Format::Json => output::write_page_json(stdout, &page, None, treatment, &page.body),
-            Format::Markdown | Format::Html => output::write_page(stdout, &page.body),
+            Format::Markdown | Format::Html | Format::Png => output::write_page(stdout, &page.body),
         }?);
     }
     if args.raw && args.format == Format::Html {
@@ -350,9 +458,9 @@ fn fetch_page(
     };
     let content = match args.format {
         Format::Html => document.to_html()?,
-        Format::Markdown | Format::Json => markdown::from_node(document.node()),
+        Format::Markdown | Format::Json | Format::Png => markdown::from_node(document.node()),
     };
-    note_if_sparse(args, &content, stderr);
+    note_if_sparse(args, treatment.rendered, &content, stderr);
     if args.format == Format::Json {
         output::write_page_json(stdout, &page, title.as_deref(), treatment, &content)?;
     } else {
@@ -367,8 +475,42 @@ fn configure(action: ConfigAction, env: Env<'_>, stdout: &mut dyn Write) -> Resu
             writeln!(stdout, "{}", required_config_path(env)?.display())?;
         }
         ConfigAction::Show => {
-            let preferences =
-                config::resolve_preferences(&Overrides::default(), env, &load_file(env)?)?;
+            let file = load_file(env)?;
+            let (backend, source) = config::resolve_backend(None, env, &file)?;
+            writeln!(stdout, "backend      {backend} ({source})")?;
+            let preferences = if backend == Backend::Cloudflare {
+                config::resolve_preferences(&Overrides::default(), env, &file)?
+            } else {
+                let (provider, provider_source) = config::pick(
+                    None,
+                    env(config::ENV_PROVIDER),
+                    file.provider.clone(),
+                    Provider::default().to_string(),
+                );
+                let (gateway_id, gateway_source) = config::pick(
+                    None,
+                    env(config::ENV_GATEWAY_ID),
+                    file.gateway_id,
+                    config::DEFAULT_GATEWAY_ID.to_owned(),
+                );
+                writeln!(stdout, "search       brave (Lightpanda)")?;
+                writeln!(
+                    stdout,
+                    "provider     {} ({provider_source}; saved Cloudflare preference)",
+                    output::sanitize(&provider)
+                )?;
+                writeln!(
+                    stdout,
+                    "gateway      {} ({gateway_source}; saved Cloudflare preference)",
+                    output::sanitize(&gateway_id)
+                )?;
+                config::Preferences {
+                    provider: Provider::default(),
+                    provider_source,
+                    gateway_id,
+                    gateway_source,
+                }
+            };
             let set = |key: &str| {
                 if env(key).is_some_and(|v| !v.is_empty()) {
                     "set"
@@ -378,17 +520,19 @@ fn configure(action: ConfigAction, env: Env<'_>, stdout: &mut dyn Write) -> Resu
             };
             let path = config::config_path(env, cfg!(windows))
                 .map_or_else(|| "(none)".to_owned(), |p| p.display().to_string());
-            writeln!(
-                stdout,
-                "provider     {} ({})",
-                preferences.provider, preferences.provider_source
-            )?;
-            writeln!(
-                stdout,
-                "gateway      {} ({})",
-                output::sanitize(&preferences.gateway_id),
-                preferences.gateway_source
-            )?;
+            if backend == Backend::Cloudflare {
+                writeln!(
+                    stdout,
+                    "provider     {} ({})",
+                    preferences.provider, preferences.provider_source
+                )?;
+                writeln!(
+                    stdout,
+                    "gateway      {} ({})",
+                    output::sanitize(&preferences.gateway_id),
+                    preferences.gateway_source
+                )?;
+            }
             writeln!(stdout, "account id   {}", set(config::ENV_ACCOUNT_ID))?;
             writeln!(stdout, "api token    {}", set(config::ENV_API_TOKEN))?;
             writeln!(stdout, "config file  {path}")?;
@@ -397,7 +541,8 @@ fn configure(action: ConfigAction, env: Env<'_>, stdout: &mut dyn Write) -> Resu
             let path = required_config_path(env)?;
             let mut file = FileConfig::load(&path)?;
             match key {
-                ConfigKey::Provider => file.provider = Some(value.parse::<Provider>()?),
+                ConfigKey::Backend => file.backend = Some(value.parse()?),
+                ConfigKey::Provider => file.provider = Some(value.parse::<Provider>()?.to_string()),
                 ConfigKey::Gateway => {
                     file.gateway_id = Some(validate::gateway_id(&value)?.to_owned());
                 }
@@ -409,6 +554,7 @@ fn configure(action: ConfigAction, env: Env<'_>, stdout: &mut dyn Write) -> Resu
             let path = required_config_path(env)?;
             let mut file = FileConfig::load(&path)?;
             match key {
+                ConfigKey::Backend => file.backend = None,
                 ConfigKey::Provider => file.provider = None,
                 ConfigKey::Gateway => file.gateway_id = None,
             }

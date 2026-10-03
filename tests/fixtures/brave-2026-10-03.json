@@ -1,0 +1,122 @@
+[
+  {
+    "url": "https://rust-lang.org/",
+    "title": "Rust Programming Language",
+    "description": "Rust is blazingly fast and memory-efficient: with no runtime or garbage collector, it can power performance-critical services, run on embedded devices, and easily integrate with other languages.",
+    "position": "1"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+    "title": "Rust (programming language) - Wikipedia",
+    "description": "2 weeks ago -Rust is a general-purpose programminglanguage that emphasizes performance, type safety, concurrency, and memory safety. Rust supports multiple programming paradigms. It was influenced by ideas from functional programming, including immutability, higher-order functions, algebraic data types,\u00a0...",
+    "position": "3"
+  },
+  {
+    "url": "https://www.reddit.com/r/rust/",
+    "title": "The Rust Programming Language",
+    "description": "December 2, 2010 -A place for all things related to the Rust programming language\u2014an open-source systems language that emphasizes performance, reliability, and productivity.",
+    "position": "6"
+  },
+  {
+    "url": "https://www.w3schools.com/rust/",
+    "title": "Rust Tutorial",
+    "description": "Rust is a popular programming language used to build everything from web servers to game engines.",
+    "position": "7"
+  },
+  {
+    "url": "https://medium.com/codex/rust-101-everything-you-need-to-know-about-rust-f3dd0ae99f4c",
+    "title": "Rust 101 \u2014 Everything you need to know about Rust | by Nishant Aanjaney Jalan | CodeX | Medium",
+    "description": "February 25, 2023 -Rust is a programming language that is built to be fast, secure, reliable and supposedly easier to program.",
+    "position": "8"
+  },
+  {
+    "url": "https://www.youtube.com/watch?v=gAX3Zj-JGE0",
+    "title": "Learn the Rust programming language - Course for beginners - YouTube",
+    "description": null,
+    "position": "9"
+  },
+  {
+    "url": "https://web.mit.edu/rust-lang_v1.25/arch/amd64_ubuntu1404/share/doc/rust/html/book/second-edition/ch01-00-introduction.html",
+    "title": "Introduction - The Rust Programming Language",
+    "description": "Rust is a programming language that helps you write faster, more reliable software. High-level ergonomics and low-level control are often at odds with each other in programming language design; Rust stands to challenge that.",
+    "position": "11"
+  },
+  {
+    "url": "https://www.reddit.com/r/learnrust/comments/1binxlv/rust_a_living_hell_the_perspective_from_a/",
+    "title": "r/learnrust on Reddit: Rust - A Living Hell - The Perspective From A Programmer Of 30 Years",
+    "description": null,
+    "position": "12"
+  },
+  {
+    "url": "https://www.infoworld.com/article/4227839/microsoft-doubles-down-on-rust.html",
+    "title": "Microsoft doubles down on Rust | InfoWorld",
+    "description": "2 days ago -Microsoft has promoted the Rust programming language to Tier-1 status internally and begun integrating it with the Microsoft Visual C++ tool chain for Windows development.",
+    "position": "13"
+  },
+  {
+    "url": "https://stackoverflow.blog/2020/01/20/what-is-rust-and-why-is-it-so-popular/",
+    "title": "What is Rust and why is it so popular? - Stack Overflow",
+    "description": "January 20, 2020 -This means any value may be what it says or nothing, effectively creating a second possible type for every type. Like Haskell and some other modern programming languages, Rust encodes this possibility using an optional type, and the compiler requires you to handle the None case.",
+    "position": "14"
+  },
+  {
+    "url": "https://github.com/rust-lang/rust",
+    "title": "GitHub - rust-lang/rust: Empowering everyone to build reliable and efficient software. \u00b7 GitHub",
+    "description": "1 month ago -This is the main source code repository for Rust. It contains the compiler, standard library, and documentation. Performance: Fast and memory-efficient, suitable for critical services, embedded devices, and easily integrated with other languages.",
+    "position": "15"
+  },
+  {
+    "url": "https://rust-book.cs.brown.edu/",
+    "title": "What's Different About This Book? - The Rust Programming Language",
+    "description": "This book is an experimental fork of The Rust Programming Language created by researchers at the Cognitive Engineering Lab at Brown University. If you\u2019re curious, this page explains what makes this book different from the original TRPL book.",
+    "position": "16"
+  },
+  {
+    "url": "https://www.scs.stanford.edu/~zyedidia/docs/rust/rust_book.pdf",
+    "title": "The Rust Programming Language",
+    "description": "The Rust \u00b7 programming language helps you write faster, more reliable software.",
+    "position": "17"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/",
+    "title": "The Rust Programming Language - The Rust Programming Language",
+    "description": "See the \u201cInstallation\u201d section of Chapter 1 for instructions on installing or updating Rust, and see Appendix E for information on editions.",
+    "position": "18"
+  },
+  {
+    "url": "https://rust-lang.org/learn/",
+    "title": "Learn Rust - Rust Programming Language",
+    "description": "A language empowering everyone to build reliable and efficient software.",
+    "position": "19"
+  },
+  {
+    "url": "https://www.amazon.co.uk/Rust-Programming-Language-2nd-Klabnik/dp/1718503105",
+    "title": "The Rust Programming Language: 2nd edition: Amazon.co.uk: Steve Klabnik, Carol Nichols: 9781718503106: Books",
+    "description": "Thoroughly updated to Rust\u2019s latest version, this edition is considered the language\u2019s official documentation. The RustProgrammingLanguage \"covers everything you could want to know about the language.\"\u2014Stack Overflow",
+    "position": "20"
+  },
+  {
+    "url": "https://github.com/rust-lang/book",
+    "title": "GitHub - rust-lang/book: The Rust Programming Language \u00b7 GitHub",
+    "description": "This repository contains the source of \"The Rust Programming Language\" book.",
+    "position": "21"
+  },
+  {
+    "url": "https://www.amazon.co.uk/Rust-Programming-Language-Third/dp/1718504446",
+    "title": "The Rust Programming Language, 3rd Edition: Amazon.co.uk: Carol Nichols, Chris Krycho, Steve Klabnik: 9781718504448: Books",
+    "description": "Buy The RustProgrammingLanguage, 3rd Edition 3 by Carol Nichols, Chris Krycho, Steve Klabnik (ISBN: 9781718504448) from Amazon's Book Store. Everyday low prices and free delivery on eligible orders.",
+    "position": "22"
+  },
+  {
+    "url": "https://blog.jetbrains.com/rust/2024/09/20/how-to-learn-rust/",
+    "title": "How To Learn Rust in 2026 | The RustRover Blog",
+    "description": "2 weeks ago -People say it\u2019s a modern systems programming language that brings safety and performance and solves problems that are hard to avoid in other programming languages (such as C or C++). Someone mentioned that Rust\u2019s popularity is growing. You regularly see blog posts describing how Google, Microsoft, Amazon, and other big players in the field have already adopted it.",
+    "position": "23"
+  },
+  {
+    "url": "https://www.reddit.com/r/rust/comments/12b7p2p/the_rust_programming_language_absolutely/",
+    "title": "The Rust programming language absolutely positively sucks",
+    "description": "April 4, 2023 -You can't expect a Python developer to learn c++ by writing a highly multi-threaded and performant application as their first program ... Now getting Rust to compile the first time is painful. Extremely. But I guarantee that the first time it does, it will do exactly what you expect: no segfaults, no thread races, no async mismanagement, no \u201cmy struct\u2019s string should print \u2018hello world\u2019 but it says \u2018$3!19hwbqk7ny8!\u2019\u201d \u00b7 Give it 0.5% of your 30 years experience with the other language, and you\u2019ll kind of hit enlightenment: \u201cI have to think about these same lifetime things when I write C, the compiler just doesn\u2019t know about them\u201d",
+    "position": "24"
+  }
+]

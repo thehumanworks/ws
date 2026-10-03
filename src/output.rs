@@ -1,6 +1,7 @@
 //! Rendering results for people (`text`) and programs (`--json`).
 
 use std::io::{self, Write};
+use std::time::Duration;
 
 use serde::Serialize;
 
@@ -93,6 +94,23 @@ pub fn write_text(
     full: bool,
 ) -> io::Result<()> {
     let items = &outcome.response.items;
+    write_items(out, items, full)?;
+    write!(
+        out,
+        "{} result{} · provider {} · gateway {} · {} ms",
+        items.len(),
+        if items.len() == 1 { "" } else { "s" },
+        preferences.provider,
+        sanitize(&preferences.gateway_id),
+        outcome.elapsed.as_millis()
+    )?;
+    if let Some(id) = &outcome.request_id {
+        write!(out, " · request {}", sanitize(id))?;
+    }
+    writeln!(out)
+}
+
+fn write_items(out: &mut dyn Write, items: &[Item], full: bool) -> io::Result<()> {
     if items.is_empty() {
         writeln!(out, "No results.")?;
     }
@@ -118,19 +136,54 @@ pub fn write_text(
         }
         writeln!(out)?;
     }
-    write!(
+    Ok(())
+}
+
+/// Writes local results with Brave/backend context and no gateway.
+///
+/// # Errors
+/// Writer errors.
+pub fn write_local_search(
+    out: &mut dyn Write,
+    items: &[Item],
+    elapsed: Duration,
+    json: bool,
+    full: bool,
+) -> io::Result<()> {
+    if json {
+        serde_json::to_writer_pretty(
+            &mut *out,
+            &serde_json::json!({ "backend": "lightpanda", "provider": "brave", "items": items, "elapsedMs": elapsed.as_millis() }),
+        )?;
+        return writeln!(out);
+    }
+    write_items(out, items, full)?;
+    writeln!(
         out,
-        "{} result{} · provider {} · gateway {} · {} ms",
+        "{} result{} · provider brave · backend lightpanda · {} ms",
         items.len(),
         if items.len() == 1 { "" } else { "s" },
-        preferences.provider,
-        sanitize(&preferences.gateway_id),
-        outcome.elapsed.as_millis()
-    )?;
-    if let Some(id) = &outcome.request_id {
-        write!(out, " · request {}", sanitize(id))?;
+        elapsed.as_millis()
+    )
+}
+
+/// Lists the local provider and how to select Cloudflare providers.
+///
+/// # Errors
+/// Writer errors.
+pub fn write_local_providers(out: &mut dyn Write, json: bool) -> io::Result<()> {
+    if json {
+        serde_json::to_writer_pretty(
+            &mut *out,
+            &serde_json::json!([{ "name": "brave", "backend": "lightpanda", "selected": true, "summary": "ordinary Brave search page through the bundled browser" }]),
+        )?;
+        writeln!(out)
+    } else {
+        writeln!(
+            out,
+            "* brave  Lightpanda: ordinary Brave search page\n  Cloudflare providers: ceramic, exa, linkup (select with WS_BACKEND=cloudflare)"
+        )
     }
-    writeln!(out)
 }
 
 /// Writes page content (Markdown or HTML) terminal-safely, without leading

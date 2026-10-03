@@ -30,6 +30,9 @@ jobs:
           toolchain: 1.98.1
       - run: cargo test --all-targets --locked
       - run: cargo build --release --locked
+      - name: Local bundled-browser release smoke
+        if: runner.os != 'Windows'
+        run: python3 scripts/smoke-local-browser.py target/release/ws
       - uses: actions/upload-artifact@v4
         with:
           name: ws-${{ matrix.os }}

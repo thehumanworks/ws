@@ -34,10 +34,13 @@ fn run(args: &[&str], env: &[(&str, &str)]) -> Run {
 }
 
 fn run_exact(args: &[&str], env: &[(&str, &str)]) -> Run {
-    let map: HashMap<String, String> = env
+    let mut map: HashMap<String, String> = env
         .iter()
         .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
         .collect();
+    let _ = map
+        .entry("WS_BACKEND".to_owned())
+        .or_insert_with(|| "cloudflare".to_owned());
     let lookup = move |key: &str| map.get(key).cloned();
     let (mut out, mut err) = (Vec::new(), Vec::new());
     let full = std::iter::once("ws").chain(args.iter().copied());
@@ -562,7 +565,7 @@ fn fetcher_is_usable_as_a_library_and_returns_the_raw_page() {
 fn binary_fetches_with_an_empty_environment() {
     let server = MockServer::start(vec![html_page()]);
     let mut command = Command::cargo_bin("ws").unwrap();
-    let _: &mut Command = command.env_clear();
+    let _: &mut Command = command.env_clear().env("WS_BACKEND", "cloudflare");
     // Windows cannot open sockets without SystemRoot.
     if let Some(root) = std::env::var_os("SystemRoot") {
         let _: &mut Command = command.env("SystemRoot", root);

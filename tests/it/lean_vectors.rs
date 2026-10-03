@@ -26,7 +26,7 @@ fn rust_agrees_with_the_lean_model_on_every_vector() {
         .join("lean")
         .join("vectors.txt");
     let text = std::fs::read_to_string(&path).unwrap();
-    let mut counts = [0_usize; 9];
+    let mut counts = [0_usize; 10];
 
     for line in text
         .lines()
@@ -37,6 +37,20 @@ fn rust_agrees_with_the_lean_model_on_every_vector() {
             .unwrap_or_else(|| panic!("bad line: {line}"));
         let fields: Vec<&str> = input.split(' ').collect();
         let actual = match fields.as_slice() {
+            ["backend", default, flag, env, file] => {
+                counts[9] += 1;
+                let parse = |name: &str| {
+                    opt(name).map(|name| name.parse::<ws::backend::Backend>().unwrap())
+                };
+                pick(
+                    parse(flag),
+                    parse(env),
+                    parse(file),
+                    default.parse::<ws::backend::Backend>().unwrap(),
+                )
+                .0
+                .to_string()
+            }
             ["provider", flag, env, file] => {
                 counts[0] += 1;
                 let parse = |t: &str| opt(t).map(|name| name.parse::<Provider>().unwrap());
@@ -109,7 +123,7 @@ fn rust_agrees_with_the_lean_model_on_every_vector() {
     // then fetch: 23 URLs, 6 URL lengths, 35 addresses, 18 media types.
     assert_eq!(
         counts,
-        [64, 8, 21, 6, 6, 23, 6, 35, 18],
+        [64, 8, 21, 6, 6, 23, 6, 35, 18, 54],
         "vector file is incomplete"
     );
 }

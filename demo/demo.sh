@@ -16,6 +16,7 @@ ws="$PWD/target/release/ws"
 # Keep the demo away from your real saved defaults.
 tmp="$(mktemp -d)"
 export WS_CONFIG="$tmp/config.toml"
+export WS_BACKEND=cloudflare
 unset WS_PROVIDER WS_GATEWAY_ID WS_LIMIT WS_BYOK_ALIAS WS_TIMEOUT_SECS WS_API_BASE_URL
 cleanup() {
   if [ -n "${server_pid:-}" ]; then

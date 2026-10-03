@@ -1,0 +1,6 @@
+# Lightpanda 1.0.0, source commit 588f6223b9cae8a2406aeef035ed9363a3e404fd
+# asset bytes sha256 (uncompressed upstream release executables)
+lightpanda-aarch64-linux 192757248 69791924bcee43b13b224af4c845622c5fe66fdbc1b8143bfaa39ca8f85244f5
+lightpanda-aarch64-macos 90354360 955440053a84754dd64c62f970449a56a2b350cdf43ea5f2e809a73047b8173d
+lightpanda-x86_64-linux 188268424 aa5a4b8ed53d1e38b3c73f5b2647d0a84a82e6744557f45f9a9c85858aa031c3
+lightpanda-x86_64-macos 94122817 e510299683b37a203912eac0ee00732224b2ef9b07fe58e69c467f5255be45e2

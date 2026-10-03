@@ -9,6 +9,7 @@
     reason = "test support code fails loudly by design"
 )]
 
+mod backend;
 mod cli;
 mod client;
 mod common;

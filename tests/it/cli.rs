@@ -18,10 +18,13 @@ struct Run {
 }
 
 fn run(args: &[&str], env: &[(&str, &str)]) -> Run {
-    let map: HashMap<String, String> = env
+    let mut map: HashMap<String, String> = env
         .iter()
         .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
         .collect();
+    let _ = map
+        .entry("WS_BACKEND".to_owned())
+        .or_insert_with(|| "cloudflare".to_owned());
     let lookup = move |key: &str| map.get(key).cloned();
     let (mut out, mut err) = (Vec::new(), Vec::new());
     let full = std::iter::once("ws").chain(args.iter().copied());
@@ -420,7 +423,10 @@ fn binary(config: &str) -> Command {
     let mut command = Command::cargo_bin("ws").unwrap();
     // Start from a clean environment so the developer's real credentials and
     // settings can never leak into (or be billed by) the test run.
-    let _: &mut Command = command.env_clear().env("WS_CONFIG", config);
+    let _: &mut Command = command
+        .env_clear()
+        .env("WS_BACKEND", "cloudflare")
+        .env("WS_CONFIG", config);
     // Windows cannot open sockets without SystemRoot.
     if let Some(root) = std::env::var_os("SystemRoot") {
         let _: &mut Command = command.env("SystemRoot", root);

@@ -1,7 +1,7 @@
 # Working on `ws`
 
-`ws` is a Rust CLI for Cloudflare's AI Gateway Web Search API, plus `ws fetch`
-for reading the pages a search finds. This file tells
+`ws` is a Rust CLI with runtime-selectable Lightpanda and Cloudflare backends,
+plus `ws fetch` for reading rendered pages or direct HTTP content. This file tells
 coding agents (and people) how to change it safely. `CLAUDE.md` points here.
 
 ## Setup
@@ -50,6 +50,10 @@ Run one test: `cargo test --test it precedence` or `cargo test --lib validate`.
 | `src/body.rs` | Reads a response body with a size cap that holds after decompression |
 | `src/output.rs` | Text and JSON rendering, terminal sanitising |
 | `src/provider.rs` | The three providers |
+| `src/backend.rs` | Runtime choice, independent of Cloudflare providers |
+| `src/lightpanda.rs`, `src/browser_asset.rs` | Isolated browser process and verified embedded-asset cache |
+| `src/brave.rs` | Pure extraction of organic Brave search results |
+| `build.rs`, `assets/` | Cargo TARGET provisioning, immutable browser/source pins and notices |
 | `tests/it/` | Integration tests; `common.rs` is a mock HTTP server |
 | `lean/` | Lean 4 model and proofs; `Vectors.lean` generates `vectors.txt` |
 | `rules/`, `rule-tests/` | ast-grep rules and their test cases |
@@ -75,8 +79,9 @@ When a check fails, fix the code; do not weaken the check.
    talks to arbitrary hosts and follows redirects. The one exception is
    `src/render.rs`, a Cloudflare client like `client.rs`: it sends the token to
    Cloudflare only, never follows redirects, and is opt-in (`--render`).
-10. **Never render automatically or in a loop.** Browser Run time is metered; `--render`
-    is the only trigger and it makes exactly one request.
+10. **Never run Cloudflare Browser Run automatically or in a loop.** Its time is
+    metered; on the Cloudflare backend `--render` is the only trigger and makes
+    exactly one request. Lightpanda renders locally by default without billing.
 11. **Fetch only public addresses by default.** The resolver in `fetch.rs` refuses
     non-public addresses on every hop; `--allow-private` is the only way around it.
 12. **Keep the page pipeline separate.** Retrieval (`fetch.rs`, `render.rs`) produces a
@@ -84,6 +89,11 @@ When a check fails, fix the code; do not weaken the check.
     consumers such as structured scraping take a `Page` or `extract::Document` and live
     in their own module. Extraction rules are fixed lists, not scores: change the lists
     and their tests together, and keep `--raw` meaning "nothing removed".
+13. **Keep Lightpanda isolated and bounded.** Spawn its pinned cache executable
+    directly with a cleared environment, telemetry/core dumps disabled, public
+    address blocking (including supplemental CIDRs), response/output caps and a
+    hard parent wall deadline. No credentials, proxy inheritance or automatic
+    Cloudflare fallback. PNG is validated binary text-image output, never sanitized.
 
 ## Tests
 
@@ -125,8 +135,9 @@ and `--render` uses metered browser time: run the fewest needed (searches with
 
 ```sh
 cargo run --release -- search "cloudflare workers" --limit 1
+cargo run --release -- search "cloudflare workers" --backend cloudflare --limit 1
 cargo run --release -- fetch https://example.com   # free: no gateway, no credentials
-cargo run --release -- fetch https://example.com --render   # metered Browser Run time
+cargo run --release -- fetch https://example.com --backend cloudflare --render # metered Browser Run time
 demo/demo.sh --mock     # full tour with no network or billing
 ```
 

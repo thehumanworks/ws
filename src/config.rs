@@ -12,6 +12,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+use crate::backend::Backend;
 use crate::error::Error;
 use crate::provider::Provider;
 use crate::validate;
@@ -32,6 +33,8 @@ pub const ENV_BYOK_ALIAS: &str = "WS_BYOK_ALIAS";
 pub const ENV_TIMEOUT_SECS: &str = "WS_TIMEOUT_SECS";
 /// Environment variable overriding the config file location.
 pub const ENV_CONFIG: &str = "WS_CONFIG";
+/// Environment variable selecting the retrieval runtime.
+pub const ENV_BACKEND: &str = "WS_BACKEND";
 
 /// Gateway used when none is configured; every account has one named `default`.
 pub const DEFAULT_GATEWAY_ID: &str = "default";
@@ -94,9 +97,12 @@ pub fn env_value(env: Env<'_>, key: &str) -> Result<Option<String>, Error> {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FileConfig {
+    /// Default runtime, independently of Cloudflare provider preferences.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend: Option<Backend>,
     /// Default provider.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provider: Option<Provider>,
+    pub provider: Option<String>,
     /// Default AI Gateway ID.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gateway_id: Option<String>,
@@ -110,9 +116,6 @@ impl FileConfig {
     pub fn parse(text: &str) -> Result<Self, Error> {
         let config: Self =
             toml::from_str(text).map_err(|e| Error::Config(format!("config file: {e}")))?;
-        if let Some(id) = &config.gateway_id {
-            let _: &str = validate::gateway_id(id)?;
-        }
         Ok(config)
     }
 
@@ -242,19 +245,36 @@ pub fn resolve_preferences(
     env: Env<'_>,
     file: &FileConfig,
 ) -> Result<Preferences, Error> {
-    let env_provider = env_value(env, ENV_PROVIDER)?
-        .map(|name| name.parse::<Provider>())
-        .transpose()?;
+    let env_provider = if overrides.provider.is_some() {
+        None
+    } else {
+        env_value(env, ENV_PROVIDER)?
+            .map(|name| name.parse::<Provider>())
+            .transpose()?
+    };
+    let file_provider = if overrides.provider.is_some() || env_provider.is_some() {
+        None
+    } else {
+        file.provider
+            .as_deref()
+            .map(str::parse::<Provider>)
+            .transpose()
+            .map_err(|error| Error::Config(format!("config file: {error}")))?
+    };
     let (provider, provider_source) = pick(
         overrides.provider,
         env_provider,
-        file.provider,
+        file_provider,
         Provider::default(),
     );
 
     let (gateway_id, gateway_source) = pick(
         overrides.gateway_id.clone(),
-        env_value(env, ENV_GATEWAY_ID)?,
+        if overrides.gateway_id.is_some() {
+            None
+        } else {
+            env_value(env, ENV_GATEWAY_ID)?
+        },
         file.gateway_id.clone(),
         DEFAULT_GATEWAY_ID.to_owned(),
     );
@@ -296,11 +316,56 @@ pub fn resolve_credentials(overrides: &Overrides, env: Env<'_>) -> Result<Creden
 /// # Errors
 /// [`Error::Config`] or [`Error::Invalid`] for a malformed or out-of-range value.
 pub fn resolve_timeout(flag: Option<u64>, env: Env<'_>) -> Result<Duration, Error> {
-    let env_timeout = env_value(env, ENV_TIMEOUT_SECS)?
-        .map(|v| parse_number(ENV_TIMEOUT_SECS, &v))
-        .transpose()?;
+    let env_timeout = if flag.is_some() {
+        None
+    } else {
+        env_value(env, ENV_TIMEOUT_SECS)?
+            .map(|v| parse_number(ENV_TIMEOUT_SECS, &v))
+            .transpose()?
+    };
     let (timeout, _) = pick(flag, env_timeout, None, DEFAULT_TIMEOUT_SECS);
     Ok(Duration::from_secs(validate::timeout_secs(timeout)?))
+}
+
+/// Resolves backend selection without reading any Cloudflare settings.
+///
+/// # Errors
+/// An empty or unknown selected backend.
+pub fn resolve_backend(
+    flag: Option<Backend>,
+    env: Env<'_>,
+    file: &FileConfig,
+) -> Result<(Backend, Source), Error> {
+    let environment = if flag.is_some() {
+        None
+    } else {
+        env_value(env, ENV_BACKEND)?
+            .map(|value| value.parse())
+            .transpose()?
+    };
+    Ok(pick(
+        flag,
+        environment,
+        file.backend,
+        Backend::platform_default(),
+    ))
+}
+
+/// Resolves the shared result limit without credentials or provider settings.
+///
+/// # Errors
+/// Malformed or out-of-range selected limits.
+pub fn resolve_limit(flag: Option<u64>, env: Env<'_>) -> Result<u8, Error> {
+    let environment = if flag.is_some() {
+        None
+    } else {
+        env_value(env, ENV_LIMIT)?
+            .map(|value| parse_number(ENV_LIMIT, &value))
+            .transpose()?
+    };
+    Ok(validate::limit(
+        pick(flag, environment, None, u64::from(validate::DEFAULT_LIMIT)).0,
+    )?)
 }
 
 /// Resolves every setting for a search from flags, environment and config file.
@@ -311,16 +376,7 @@ pub fn resolve_timeout(flag: Option<u64>, env: Env<'_>) -> Result<Duration, Erro
 pub fn resolve(overrides: &Overrides, env: Env<'_>, file: &FileConfig) -> Result<Settings, Error> {
     let preferences = resolve_preferences(overrides, env, file)?;
 
-    let env_limit = env_value(env, ENV_LIMIT)?
-        .map(|v| parse_number(ENV_LIMIT, &v))
-        .transpose()?;
-    let (limit, _) = pick(
-        overrides.limit,
-        env_limit,
-        None,
-        u64::from(validate::DEFAULT_LIMIT),
-    );
-    let limit = validate::limit(limit)?;
+    let limit = resolve_limit(overrides.limit, env)?;
 
     let byok_alias = match overrides.byok_alias.clone() {
         Some(alias) => Some(alias),
@@ -390,7 +446,8 @@ mod tests {
     fn file_overrides_default() {
         let env = env_of(&creds());
         let file = FileConfig {
-            provider: Some(Provider::Linkup),
+            backend: None,
+            provider: Some("linkup".to_owned()),
             gateway_id: Some("file-gw".into()),
         };
         let s = resolve(&Overrides::default(), &env, &file).unwrap();
@@ -417,7 +474,8 @@ mod tests {
         ]);
         let env = env_of(&pairs);
         let file = FileConfig {
-            provider: Some(Provider::Linkup),
+            backend: None,
+            provider: Some("linkup".to_owned()),
             gateway_id: Some("file-gw".into()),
         };
         let s = resolve(&Overrides::default(), &env, &file).unwrap();
@@ -447,7 +505,8 @@ mod tests {
         ]);
         let env = env_of(&pairs);
         let file = FileConfig {
-            provider: Some(Provider::Linkup),
+            backend: None,
+            provider: Some("linkup".to_owned()),
             gateway_id: Some("file-gw".into()),
         };
         let overrides = Overrides {
@@ -579,15 +638,20 @@ mod tests {
         assert_eq!(
             parsed,
             FileConfig {
-                provider: Some(Provider::Exa),
+                backend: None,
+                provider: Some("exa".to_owned()),
                 gateway_id: Some("gw".into())
             }
         );
-        assert!(FileConfig::parse("provider = \"google\"").is_err());
+        assert!(FileConfig::parse("provider = \"google\"").is_ok());
         assert!(FileConfig::parse("token = \"secret\"").is_err());
-        assert!(FileConfig::parse("gateway_id = \"\"").is_err());
+        assert!(FileConfig::parse("gateway_id = \"\"").is_ok());
         assert!(matches!(
-            FileConfig::parse("gateway_id = \"a b\""),
+            resolve_preferences(
+                &Overrides::default(),
+                &env_of(&[]),
+                &FileConfig::parse("gateway_id = \"a b\"").unwrap()
+            ),
             Err(Error::Invalid(ValidationError::InvalidGatewayId))
         ));
     }
@@ -598,7 +662,8 @@ mod tests {
         let path = dir.path().join("nested").join("config.toml");
         assert_eq!(FileConfig::load(&path).unwrap(), FileConfig::default());
         let config = FileConfig {
-            provider: Some(Provider::Linkup),
+            backend: None,
+            provider: Some("linkup".to_owned()),
             gateway_id: Some("gw-1".into()),
         };
         config.save(&path).unwrap();

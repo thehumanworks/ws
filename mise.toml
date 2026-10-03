@@ -41,9 +41,9 @@ run = "lake exe vectors > vectors.txt"
 [tasks.cross]
 description = "Cross-compile release binaries for Linux (x86_64, arm64) and Windows from any host"
 run = [
-  "rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-pc-windows-gnu",
-  "cargo zigbuild --release --locked --target x86_64-unknown-linux-musl",
-  "cargo zigbuild --release --locked --target aarch64-unknown-linux-musl",
+  "rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-pc-windows-gnu",
+  "cargo zigbuild --release --locked --target x86_64-unknown-linux-gnu.2.35",
+  "cargo zigbuild --release --locked --target aarch64-unknown-linux-gnu.2.38",
   "cargo zigbuild --release --locked --target x86_64-pc-windows-gnu",
 ]
 
